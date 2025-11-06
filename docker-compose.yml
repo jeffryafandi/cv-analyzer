@@ -1,8 +1,6 @@
 # Docker Compose configuration for local development
 # Runs MongoDB, Redis, ChromaDB, Backend API, and Worker services
 
-version: '3.8'
-
 services:
   mongodb:
     image: mongo:latest
