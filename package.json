@@ -3,12 +3,17 @@
   "version": "1.0.50",
   "scripts": {
     "dev": "bun run --watch src/index.ts",
-    "build": "bun build src/index.ts --outdir dist --external mongoose --external zod",
-    "start": "bun run dist/index.js"
+    "dev:worker": "bun run --watch src/worker.ts",
+    "build": "bun build src/index.ts --outdir dist --external mongoose --external zod --external ioredis --external bullmq",
+    "build:worker": "bun build src/worker.ts --outdir dist --external mongoose --external zod --external ioredis --external bullmq",
+    "start": "bun run src/index.ts",
+    "start:worker": "bun run src/worker.ts"
   },
   "dependencies": {
     "@elysiajs/openapi": "^1.4.11",
+    "bullmq": "^5.63.0",
     "elysia": "latest",
+    "ioredis": "^5.8.2",
     "mongoose": "^8.19.3",
     "zod": "^4.1.12"
   },

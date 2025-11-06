@@ -1,0 +1,99 @@
+# Docker Compose configuration for local development
+# Runs MongoDB, Redis, ChromaDB, Backend API, and Worker services
+
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:latest
+    container_name: cv-analyzer-mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: cv-analyzer
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:alpine
+    container_name: cv-analyzer-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: cv-analyzer-chromadb
+    ports:
+      - "8000:8000"
+    volumes:
+      - chromadb_data:/chroma/chroma
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: cv-analyzer-backend
+    ports:
+      - "${PORT:-3000}:${PORT:-3000}"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=${PORT:-3000}
+      - MONGODB_URI=${MONGODB_URI:-mongodb://${MONGODB_SERVICE:-mongodb}:27017/cv-analyzer}
+      - REDIS_URI=${REDIS_URI:-redis://${REDIS_SERVICE:-redis}:6379}
+    volumes:
+      - ./uploads:/app/uploads
+      - ./data:/app/data
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: cv-analyzer-worker
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - MONGODB_URI=${MONGODB_URI:-mongodb://${MONGODB_SERVICE:-mongodb}:27017/cv-analyzer}
+      - REDIS_URI=${REDIS_URI:-redis://${REDIS_SERVICE:-redis}:6379}
+    volumes:
+      - ./uploads:/app/uploads
+      - ./data:/app/data
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  mongodb_data:
+  redis_data:
+  chromadb_data:
+

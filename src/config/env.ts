@@ -5,6 +5,7 @@ const envSchema = z.object({
     .string()
     .url()
     .default("mongodb://localhost:27017/cv-analyzer"),
+  REDIS_URI: z.string().url().default("redis://localhost:6379"),
   NODE_ENV: z
     .enum(["development", "production", "test"])
     .default("development"),
@@ -18,6 +19,7 @@ const parseEnv = () => {
   try {
     return envSchema.parse({
       MONGODB_URI: process.env.MONGODB_URI,
+      REDIS_URI: process.env.REDIS_URI,
       NODE_ENV: process.env.NODE_ENV,
       PORT: process.env.PORT,
     });

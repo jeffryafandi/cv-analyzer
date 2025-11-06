@@ -46,12 +46,12 @@ export const connectDB = async (): Promise<void> => {
   try {
     await mongoose.connect(env.MONGODB_URI);
     isConnected = true;
-    console.log("✅ MongoDB connected successfully");
+    console.log("MongoDB connected");
 
     // Register event listeners after successful connection
     registerEventListeners();
   } catch (error) {
-    console.error("❌ MongoDB connection error:", error);
+    console.error("MongoDB connection error:", error);
     isConnected = false;
     throw error;
   }
