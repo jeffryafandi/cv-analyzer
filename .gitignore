@@ -8,6 +8,9 @@
 # Environment variables
 .env
 
+# Build output
+/dist
+
 # testing
 /coverage
 
@@ -43,3 +46,6 @@ yarn-error.log*
 **/*.log
 package-lock.json
 **/*.bun
+
+# Uploaded files
+/uploads

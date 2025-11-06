@@ -1,0 +1,3 @@
+[install]
+# Set the registry to npm
+registry = "https://registry.npmjs.org/"

@@ -2,11 +2,15 @@
   "name": "elysia",
   "version": "1.0.50",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "bun run --watch src/index.ts"
+    "dev": "bun run --watch src/index.ts",
+    "build": "bun build src/index.ts --outdir dist --external mongoose --external zod",
+    "start": "bun run dist/index.js"
   },
   "dependencies": {
-    "elysia": "latest"
+    "@elysiajs/openapi": "^1.4.11",
+    "elysia": "latest",
+    "mongoose": "^8.19.3",
+    "zod": "^4.1.12"
   },
   "devDependencies": {
     "bun-types": "latest"
