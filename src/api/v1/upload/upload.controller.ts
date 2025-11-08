@@ -4,13 +4,14 @@ import { FileModel } from "../../../models/file.model";
 
 export const uploadController = new Elysia().post(
   "",
-  async ({ request }) => {
+  async ({ request, set }) => {
     try {
       // Get the content type to check if it's multipart
       const contentType = request.headers.get("content-type") || "";
 
       // Only attempt to parse if content-type is multipart/form-data
       if (!contentType.includes("multipart/form-data")) {
+        set.status = 400;
         return {
           success: false,
           error:
@@ -28,6 +29,7 @@ export const uploadController = new Elysia().post(
       } catch (error) {
         // If formData parsing fails, return helpful error
         console.error("FormData parsing error:", error);
+        set.status = 400;
         return {
           success: false,
           error:
@@ -41,6 +43,7 @@ export const uploadController = new Elysia().post(
       const reportFile = formData.get("report") as File | null;
 
       if (!cvFile) {
+        set.status = 400;
         return {
           success: false,
           error: "CV file is required",
@@ -52,6 +55,7 @@ export const uploadController = new Elysia().post(
       // Validate file types (should be PDFs)
       const allowedMimeTypes = ["application/pdf"];
       if (!allowedMimeTypes.includes(cvFile.type)) {
+        set.status = 400;
         return {
           success: false,
           error: "CV file must be a PDF",
@@ -60,6 +64,7 @@ export const uploadController = new Elysia().post(
         };
       }
       if (reportFile && !allowedMimeTypes.includes(reportFile.type)) {
+        set.status = 400;
         return {
           success: false,
           error: "Report file must be a PDF",
@@ -110,6 +115,7 @@ export const uploadController = new Elysia().post(
       console.error("Error uploading files:", error);
       const errorMessage =
         error instanceof Error ? error.message : "Failed to upload files";
+      set.status = 500;
       return {
         success: false,
         error: errorMessage,
@@ -158,6 +164,38 @@ export const uploadController = new Elysia().post(
                   success: { type: "boolean" },
                   message: { type: "string" },
                   cvId: { type: "string" },
+                  reportId: { type: "string", nullable: true },
+                },
+              },
+            },
+          },
+        },
+        400: {
+          description: "Bad request - validation error",
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  success: { type: "boolean" },
+                  error: { type: "string" },
+                  cvId: { type: "string", nullable: true },
+                  reportId: { type: "string", nullable: true },
+                },
+              },
+            },
+          },
+        },
+        500: {
+          description: "Internal server error",
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  success: { type: "boolean" },
+                  error: { type: "string" },
+                  cvId: { type: "string", nullable: true },
                   reportId: { type: "string", nullable: true },
                 },
               },

@@ -3,13 +3,14 @@ import { JobModel } from "../../../models/job.model";
 
 export const resultController = new Elysia().get(
   ":id",
-  async ({ params }) => {
+  async ({ params, set }) => {
     try {
       const jobId = params.id;
 
       const job = await JobModel.findOne({ jobId });
 
       if (!job) {
+        set.status = 404;
         return {
           success: false,
           error: `Job with ID ${jobId} not found`,
@@ -52,6 +53,7 @@ export const resultController = new Elysia().get(
         error instanceof Error
           ? error.message
           : "Failed to retrieve evaluation result";
+      set.status = 500;
       return {
         success: false,
         error: errorMessage,
@@ -126,6 +128,34 @@ export const resultController = new Elysia().get(
                     },
                   },
                 ],
+              },
+            },
+          },
+        },
+        404: {
+          description: "Job not found",
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  success: { type: "boolean" },
+                  error: { type: "string" },
+                },
+              },
+            },
+          },
+        },
+        500: {
+          description: "Internal server error",
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  success: { type: "boolean" },
+                  error: { type: "string" },
+                },
               },
             },
           },

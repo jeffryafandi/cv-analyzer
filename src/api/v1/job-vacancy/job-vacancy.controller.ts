@@ -10,10 +10,11 @@ export const jobVacancyController = new Elysia()
   // POST /api/v1/job-vacancy - Create new job vacancy
   .post(
     "",
-    async ({ request }) => {
+    async ({ request, set }) => {
       try {
         const contentType = request.headers.get("content-type") || "";
         if (!contentType.includes("multipart/form-data")) {
+          set.status = 400;
           return {
             success: false,
             error:
@@ -40,6 +41,7 @@ export const jobVacancyController = new Elysia()
 
         // Validate required fields
         if (!title || !type) {
+          set.status = 400;
           return {
             success: false,
             error: "title and type are required",
@@ -47,6 +49,7 @@ export const jobVacancyController = new Elysia()
         }
 
         if (type !== "cv_only" && type !== "cv_with_test") {
+          set.status = 400;
           return {
             success: false,
             error: "type must be either 'cv_only' or 'cv_with_test'",
@@ -55,6 +58,7 @@ export const jobVacancyController = new Elysia()
 
         // Validate required files
         if (!jobDescriptionFile || !cvRubricFile) {
+          set.status = 400;
           return {
             success: false,
             error: "jobDescription and cvRubric files are required",
@@ -64,6 +68,7 @@ export const jobVacancyController = new Elysia()
         // Validate files for cv_with_test type
         if (type === "cv_with_test") {
           if (!caseStudyBriefFile || !projectRubricFile) {
+            set.status = 400;
             return {
               success: false,
               error:
@@ -87,6 +92,7 @@ export const jobVacancyController = new Elysia()
 
         for (const { file, name } of filesToCheck) {
           if (file && !allowedMimeTypes.includes(file.type)) {
+            set.status = 400;
             return {
               success: false,
               error: `${name} file must be a PDF`,
@@ -195,6 +201,7 @@ export const jobVacancyController = new Elysia()
           error instanceof Error
             ? error.message
             : "Failed to create job vacancy";
+        set.status = 500;
         return {
           success: false,
           error: errorMessage,
@@ -272,6 +279,34 @@ export const jobVacancyController = new Elysia()
               },
             },
           },
+          400: {
+            description: "Bad request - validation error",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    success: { type: "boolean" },
+                    error: { type: "string" },
+                  },
+                },
+              },
+            },
+          },
+          500: {
+            description: "Internal server error",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    success: { type: "boolean" },
+                    error: { type: "string" },
+                  },
+                },
+              },
+            },
+          },
         },
       },
     }
@@ -279,7 +314,7 @@ export const jobVacancyController = new Elysia()
   // GET /api/v1/job-vacancy - List all job vacancies
   .get(
     "",
-    async ({ query }) => {
+    async ({ query, set }) => {
       try {
         const status = query.status as JobVacancyStatus | undefined;
         const type = query.type as JobType | undefined;
@@ -324,6 +359,7 @@ export const jobVacancyController = new Elysia()
           error instanceof Error
             ? error.message
             : "Failed to list job vacancies";
+        set.status = 500;
         return {
           success: false,
           error: errorMessage,
@@ -340,6 +376,20 @@ export const jobVacancyController = new Elysia()
           200: {
             description: "Job vacancies retrieved successfully",
           },
+          500: {
+            description: "Internal server error",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    success: { type: "boolean" },
+                    error: { type: "string" },
+                  },
+                },
+              },
+            },
+          },
         },
       },
     }
@@ -347,13 +397,14 @@ export const jobVacancyController = new Elysia()
   // GET /api/v1/job-vacancy/:id - Get specific job vacancy
   .get(
     ":id",
-    async ({ params }) => {
+    async ({ params, set }) => {
       try {
         const vacancy = await JobVacancyModel.findOne({
           vacancyId: params.id,
         }).lean();
 
         if (!vacancy) {
+          set.status = 404;
           return {
             success: false,
             error: `Job vacancy with ID ${params.id} not found`,
@@ -368,6 +419,7 @@ export const jobVacancyController = new Elysia()
         console.error("Error getting job vacancy:", error);
         const errorMessage =
           error instanceof Error ? error.message : "Failed to get job vacancy";
+        set.status = 500;
         return {
           success: false,
           error: errorMessage,
@@ -384,6 +436,34 @@ export const jobVacancyController = new Elysia()
           200: {
             description: "Job vacancy retrieved successfully",
           },
+          404: {
+            description: "Job vacancy not found",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    success: { type: "boolean" },
+                    error: { type: "string" },
+                  },
+                },
+              },
+            },
+          },
+          500: {
+            description: "Internal server error",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    success: { type: "boolean" },
+                    error: { type: "string" },
+                  },
+                },
+              },
+            },
+          },
         },
       },
     }
@@ -391,11 +471,12 @@ export const jobVacancyController = new Elysia()
   // PATCH /api/v1/job-vacancy/:id - Update job vacancy status
   .patch(
     ":id",
-    async ({ params, body }) => {
+    async ({ params, body, set }) => {
       try {
         const { status } = body as { status?: "active" | "inactive" };
 
         if (!status || (status !== "active" && status !== "inactive")) {
+          set.status = 400;
           return {
             success: false,
             error: "status must be either 'active' or 'inactive'",
@@ -409,6 +490,7 @@ export const jobVacancyController = new Elysia()
         );
 
         if (!vacancy) {
+          set.status = 404;
           return {
             success: false,
             error: `Job vacancy with ID ${params.id} not found`,
@@ -427,6 +509,7 @@ export const jobVacancyController = new Elysia()
           error instanceof Error
             ? error.message
             : "Failed to update job vacancy";
+        set.status = 500;
         return {
           success: false,
           error: errorMessage,
@@ -460,6 +543,48 @@ export const jobVacancyController = new Elysia()
         responses: {
           200: {
             description: "Job vacancy status updated successfully",
+          },
+          400: {
+            description: "Bad request - validation error",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    success: { type: "boolean" },
+                    error: { type: "string" },
+                  },
+                },
+              },
+            },
+          },
+          404: {
+            description: "Job vacancy not found",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    success: { type: "boolean" },
+                    error: { type: "string" },
+                  },
+                },
+              },
+            },
+          },
+          500: {
+            description: "Internal server error",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    success: { type: "boolean" },
+                    error: { type: "string" },
+                  },
+                },
+              },
+            },
           },
         },
       },

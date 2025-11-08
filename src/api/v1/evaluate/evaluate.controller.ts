@@ -8,7 +8,7 @@ import { EvaluationJobData } from "../../../types/jobs";
 
 export const evaluateController = new Elysia().post(
   "",
-  async ({ body }) => {
+  async ({ body, set }) => {
     try {
       const { vacancyId, cvId, reportId } = body as {
         vacancyId?: string;
@@ -18,6 +18,7 @@ export const evaluateController = new Elysia().post(
 
       // Validate input
       if (!vacancyId || !cvId) {
+        set.status = 400;
         return {
           success: false,
           error: "vacancyId and cvId are required",
@@ -27,6 +28,7 @@ export const evaluateController = new Elysia().post(
       // Validate vacancy exists and is active
       const vacancy = await JobVacancyModel.findOne({ vacancyId });
       if (!vacancy) {
+        set.status = 404;
         return {
           success: false,
           error: `Job vacancy with ID ${vacancyId} not found`,
@@ -34,6 +36,7 @@ export const evaluateController = new Elysia().post(
       }
 
       if (vacancy.status !== "active") {
+        set.status = 400;
         return {
           success: false,
           error: `Job vacancy with ID ${vacancyId} is not active`,
@@ -43,6 +46,7 @@ export const evaluateController = new Elysia().post(
       // Validate CV file exists
       const cvFile = await FileModel.findById(cvId);
       if (!cvFile) {
+        set.status = 404;
         return {
           success: false,
           error: `CV file with ID ${cvId} not found`,
@@ -54,6 +58,7 @@ export const evaluateController = new Elysia().post(
       if (reportId) {
         reportFile = await FileModel.findById(reportId);
         if (!reportFile) {
+          set.status = 404;
           return {
             success: false,
             error: `Report file with ID ${reportId} not found`,
@@ -63,6 +68,7 @@ export const evaluateController = new Elysia().post(
 
       // Validate report requirement based on vacancy type
       if (vacancy.type === "cv_with_test" && !reportId) {
+        set.status = 400;
         return {
           success: false,
           error: "reportId is required for cv_with_test job vacancies",
@@ -101,6 +107,7 @@ export const evaluateController = new Elysia().post(
         error instanceof Error
           ? error.message
           : "Failed to create evaluation job";
+      set.status = 500;
       return {
         success: false,
         error: errorMessage,
@@ -149,6 +156,48 @@ export const evaluateController = new Elysia().post(
                 properties: {
                   id: { type: "string" },
                   status: { type: "string", enum: ["queued"] },
+                },
+              },
+            },
+          },
+        },
+        400: {
+          description: "Bad request - validation error",
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  success: { type: "boolean" },
+                  error: { type: "string" },
+                },
+              },
+            },
+          },
+        },
+        404: {
+          description: "Resource not found",
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  success: { type: "boolean" },
+                  error: { type: "string" },
+                },
+              },
+            },
+          },
+        },
+        500: {
+          description: "Internal server error",
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  success: { type: "boolean" },
+                  error: { type: "string" },
                 },
               },
             },

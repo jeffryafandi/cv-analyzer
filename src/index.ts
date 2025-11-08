@@ -10,6 +10,7 @@ import { ElysiaAdapter } from "@bull-board/elysia";
 import { getEvaluationQueue } from "./jobs/evaluation.queue";
 import { getJobVacancyIngestionQueue } from "./jobs/job-vacancy-ingestion.queue";
 import packageJson from "../package.json";
+import { httpErrors } from "./api/http-error";
 
 // Create server adapter first
 const serverAdapter = new ElysiaAdapter("/admin/queues");
@@ -82,15 +83,19 @@ async function startServer() {
     })
     .use(serverAdapter.registerPlugin())
     .onError(({ code, error }) => {
+      // Ignore 404 errors
+      if (code === "NOT_FOUND") {
+        return httpErrors.notFound(
+          error instanceof Error ? error.message : String(error) || "Not found"
+        );
+      }
+      // Handle other errors
       console.error(`Error: ${code}`, error);
-      const errorMessage =
+      return httpErrors.internalServerError(
         error instanceof Error
           ? error.message
-          : String(error) || "Internal server error";
-      return {
-        success: false,
-        error: errorMessage,
-      };
+          : String(error) || "Internal server error"
+      );
     });
 
   app.listen(env.PORT, () => {
