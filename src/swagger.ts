@@ -49,6 +49,10 @@ export const swaggerPlugin = openapi({
   documentation: {
     servers: [
       {
+        description: "Production server",
+        url: `https://cv-analyzer.withyou.eu.org`,
+      },
+      {
         description: "Local server",
         url: `http://localhost:${env.PORT}`,
       },
