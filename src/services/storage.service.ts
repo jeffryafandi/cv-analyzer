@@ -1,6 +1,7 @@
 import { writeFile, mkdir } from "fs/promises";
 import { join } from "path";
 import { randomUUID } from "crypto";
+import { FileType } from "../types/services";
 
 const UPLOADS_DIR = join(process.cwd(), "uploads");
 
@@ -21,12 +22,12 @@ export const ensureUploadsDir = async (): Promise<void> => {
 /**
  * Save an uploaded file to disk
  * @param file - The file to save (Bun File object)
- * @param fileType - Type of file ('cv' or 'report')
+ * @param fileType - Type of file
  * @returns The file path and filename
  */
 export const saveFile = async (
   file: File,
-  fileType: "cv" | "report"
+  fileType: FileType
 ): Promise<{ filePath: string; filename: string }> => {
   await ensureUploadsDir();
 

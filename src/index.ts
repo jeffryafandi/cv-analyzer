@@ -2,14 +2,14 @@ import { Elysia } from "elysia";
 import { connectDB } from "./config/db";
 import { connectRedis } from "./config/redis";
 import { env } from "./config/env";
-import { uploadController } from "./api/upload.controller";
-import { evaluateController } from "./api/evaluate.controller";
-import { resultController } from "./api/result.controller";
+import { loadControllers } from "./api/load-controllers";
 import { swaggerPlugin } from "./swagger";
 import { createBullBoard } from "@bull-board/api";
 import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
 import { ElysiaAdapter } from "@bull-board/elysia";
 import { getEvaluationQueue } from "./jobs/evaluation.queue";
+import { getJobVacancyIngestionQueue } from "./jobs/job-vacancy-ingestion.queue";
+import packageJson from "../package.json";
 
 // Create server adapter first
 const serverAdapter = new ElysiaAdapter("/admin/queues");
@@ -21,7 +21,10 @@ async function startServer() {
 
   // Setup Bull Board after Redis is connected
   createBullBoard({
-    queues: [new BullMQAdapter(getEvaluationQueue())],
+    queues: [
+      new BullMQAdapter(getEvaluationQueue()),
+      new BullMQAdapter(getJobVacancyIngestionQueue()),
+    ],
     serverAdapter,
 
     options: {
@@ -29,20 +32,29 @@ async function startServer() {
     },
   });
 
+  // Load all controllers automatically
+  const controllersApp = await loadControllers();
+
   // Initialize Elysia app
   const app = new Elysia()
-    .get("/", () => ({
-      message: "CV Analyzer API",
-      version: "1.0.0",
-      endpoints: {
-        upload: "POST /upload",
-        evaluate: "POST /evaluate",
-        result: "GET /result/:id",
-      },
-    }))
-    .use(uploadController)
-    .use(evaluateController)
-    .use(resultController)
+    .get(
+      "/",
+      () =>
+        new Response(
+          `
+     <html>
+     <body>
+     <h1>CV Analyzer API v${packageJson.version}</h1>
+     </body>
+     </html>`,
+          {
+            headers: {
+              "Content-Type": "text/html",
+            },
+          }
+        )
+    )
+    .use(controllersApp)
     .use(swaggerPlugin)
     .onBeforeHandle(({ request, set, path }) => {
       // Only apply authentication to bull-board routes

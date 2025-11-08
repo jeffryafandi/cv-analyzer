@@ -1,8 +1,8 @@
 import { Elysia } from "elysia";
-import { JobModel } from "../models/job.model";
+import { JobModel } from "../../../models/job.model";
 
-export const resultController = new Elysia({ prefix: "/result" }).get(
-  "/:id",
+export const resultController = new Elysia().get(
+  ":id",
   async ({ params }) => {
     try {
       const jobId = params.id;

@@ -2,6 +2,22 @@ import { ChromaClient } from "chromadb";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { env } from "../config/env";
 import { getEmbeddingFunction } from "./embedding.service";
+import { JobType } from "../types/common";
+import {
+  FileType,
+  DocumentTexts,
+  EvaluationQueries,
+  CVEvaluationResult,
+  ProjectEvaluationResult,
+  CVResults,
+  ProjectResults,
+  SummaryResult,
+  VectorDBResultWithSimilarity,
+  VectorDBResult,
+  CollectionDocument,
+  CollectionInfo,
+  StandardizedRubric,
+} from "../types/services";
 
 // Initialize ChromaDB client
 let chromaClient: ChromaClient | null = null;
@@ -58,13 +74,7 @@ export async function listCollections(): Promise<string[]> {
 export async function getCollectionDocuments(
   collectionName: string,
   limit?: number
-): Promise<
-  Array<{
-    id: string;
-    text: string;
-    metadata?: Record<string, unknown>;
-  }>
-> {
+): Promise<CollectionDocument[]> {
   const client = getChromaClient();
 
   if (!env.GEMINI_API_KEY && !env.OPENROUTER_API_KEY) {
@@ -120,11 +130,9 @@ export async function getCollectionDocuments(
  * @param collectionName - Name of the collection
  * @returns Collection information including document count
  */
-export async function getCollectionInfo(collectionName: string): Promise<{
-  name: string;
-  count: number;
-  metadata?: Record<string, unknown>;
-}> {
+export async function getCollectionInfo(
+  collectionName: string
+): Promise<CollectionInfo> {
   const client = getChromaClient();
 
   if (!env.GEMINI_API_KEY && !env.OPENROUTER_API_KEY) {
@@ -192,25 +200,17 @@ function cosineSimilarity(vecA: number[], vecB: number[]): number {
  * @param cvText - CV text to compare against documents
  * @param collectionNames - Array of collection names to search
  * @param topK - Number of results to return per collection
+ * @param jobVacancyId - Optional job vacancy ID to filter results by metadata
  * @returns Array of retrieved text chunks with metadata and similarity scores
  */
 export async function queryVectorDBWithCosineSimilarity(
   cvText: string,
   collectionNames: string[],
-  topK: number = 5
-): Promise<
-  Array<{
-    text: string;
-    metadata?: Record<string, unknown>;
-    similarity: number;
-  }>
-> {
+  topK: number = 5,
+  jobVacancyId?: string
+): Promise<VectorDBResultWithSimilarity[]> {
   const client = getChromaClient();
-  const allResults: Array<{
-    text: string;
-    metadata?: Record<string, unknown>;
-    similarity: number;
-  }> = [];
+  const allResults: VectorDBResultWithSimilarity[] = [];
 
   if (!env.GEMINI_API_KEY && !env.OPENROUTER_API_KEY) {
     throw new Error(
@@ -231,11 +231,18 @@ export async function queryVectorDBWithCosineSimilarity(
 
       // Query ChromaDB - it uses cosine similarity internally
       // ChromaDB already has embeddings stored, so this is efficient
-      const results = await collection.query({
+      const queryOptions: any = {
         queryTexts: [cvText],
         nResults: topK,
         include: ["documents", "metadatas", "distances"],
-      });
+      };
+
+      // Add metadata filter if jobVacancyId is provided
+      if (jobVacancyId) {
+        queryOptions.where = { jobVacancyId };
+      }
+
+      const results = await collection.query(queryOptions);
 
       if (results.documents && results.documents[0]) {
         const documents = results.documents[0] as string[];
@@ -295,18 +302,17 @@ export async function queryVectorDBWithCosineSimilarity(
  * @param query - Search query text
  * @param collectionNames - Array of collection names to search
  * @param topK - Number of results to return per collection
+ * @param jobVacancyId - Optional job vacancy ID to filter results by metadata
  * @returns Array of retrieved text chunks with metadata
  */
 export async function queryVectorDB(
   query: string,
   collectionNames: string[],
-  topK: number = 5
-): Promise<Array<{ text: string; metadata?: Record<string, unknown> }>> {
+  topK: number = 5,
+  jobVacancyId?: string
+): Promise<VectorDBResult[]> {
   const client = getChromaClient();
-  const allResults: Array<{
-    text: string;
-    metadata?: Record<string, unknown>;
-  }> = [];
+  const allResults: VectorDBResult[] = [];
 
   if (!env.GEMINI_API_KEY && !env.OPENROUTER_API_KEY) {
     throw new Error(
@@ -323,10 +329,17 @@ export async function queryVectorDB(
         embeddingFunction: embedder,
       });
 
-      const results = await collection.query({
+      const queryOptions: any = {
         queryTexts: [query],
         nResults: topK,
-      });
+      };
+
+      // Add metadata filter if jobVacancyId is provided
+      if (jobVacancyId) {
+        queryOptions.where = { jobVacancyId };
+      }
+
+      const results = await collection.query(queryOptions);
 
       if (results.documents && results.documents[0]) {
         for (let i = 0; i < results.documents[0].length; i++) {
@@ -466,7 +479,7 @@ export async function callLLM(prompt: string): Promise<string> {
  */
 export function buildCVEvaluationPrompt(
   cvText: string,
-  retrievedChunks: Array<{ text: string; metadata?: Record<string, unknown> }>
+  retrievedChunks: VectorDBResult[]
 ): string {
   const context = retrievedChunks
     .map((chunk, idx) => `[Context ${idx + 1}]\n${chunk.text}`)
@@ -504,7 +517,7 @@ RESPONSE FORMAT (JSON only, no markdown):
  */
 export function buildProjectEvaluationPrompt(
   reportText: string,
-  retrievedChunks: Array<{ text: string; metadata?: Record<string, unknown> }>
+  retrievedChunks: VectorDBResult[]
 ): string {
   const context = retrievedChunks
     .map((chunk, idx) => `[Context ${idx + 1}]\n${chunk.text}`)
@@ -538,33 +551,34 @@ RESPONSE FORMAT (JSON only, no markdown):
 /**
  * Build prompt for overall summary
  * @param cvResults - CV evaluation results
- * @param projectResults - Project evaluation results
+ * @param projectResults - Project evaluation results (optional for cv_only jobs)
  * @returns Formatted prompt string
  */
 export function buildSummaryPrompt(
-  cvResults: {
-    cv_match_rate: number;
-    cv_feedback: string;
-    cv_detailed_scores?: {
-      technical_skills: number;
-      experience_level: number;
-      achievements: number;
-      cultural_fit: number;
-    };
-  },
-  projectResults: {
-    project_score: number;
-    project_feedback: string;
-    project_detailed_scores?: {
-      correctness: number;
-      code_quality: number;
-      resilience: number;
-      documentation: number;
-      creativity: number;
-    };
-  }
+  cvResults: CVResults,
+  projectResults: ProjectResults | null
 ): string {
-  return `You are a hiring manager. Based on the CV and project evaluations below, provide a concise overall summary (3-5 sentences) that includes:
+  const projectSection = projectResults
+    ? `PROJECT EVALUATION:
+Score: ${projectResults.project_score.toFixed(2)}/5
+Scores: Correctness ${
+        projectResults.project_detailed_scores?.correctness || "N/A"
+      }, Code Quality ${
+        projectResults.project_detailed_scores?.code_quality || "N/A"
+      }, Resilience ${
+        projectResults.project_detailed_scores?.resilience || "N/A"
+      }, Documentation ${
+        projectResults.project_detailed_scores?.documentation || "N/A"
+      }, Creativity ${
+        projectResults.project_detailed_scores?.creativity || "N/A"
+      }
+Feedback: ${projectResults.project_feedback}`
+    : `PROJECT EVALUATION:
+Not applicable - This is a CV-only evaluation.`;
+
+  return `You are a hiring manager. Based on the CV evaluation${
+    projectResults ? " and project evaluation" : ""
+  } below, provide a concise overall summary (3-5 sentences) that includes:
 - Key strengths of the candidate
 - Notable gaps or areas for improvement
 - Final recommendation
@@ -580,18 +594,7 @@ Scores: Technical Skills ${
   }, Cultural Fit ${cvResults.cv_detailed_scores?.cultural_fit || "N/A"}
 Feedback: ${cvResults.cv_feedback}
 
-PROJECT EVALUATION:
-Score: ${projectResults.project_score.toFixed(2)}/5
-Scores: Correctness ${
-    projectResults.project_detailed_scores?.correctness || "N/A"
-  }, Code Quality ${
-    projectResults.project_detailed_scores?.code_quality || "N/A"
-  }, Resilience ${
-    projectResults.project_detailed_scores?.resilience || "N/A"
-  }, Documentation ${
-    projectResults.project_detailed_scores?.documentation || "N/A"
-  }, Creativity ${projectResults.project_detailed_scores?.creativity || "N/A"}
-Feedback: ${projectResults.project_feedback}
+${projectSection}
 
 RESPONSE FORMAT (JSON only, no markdown):
 {
@@ -635,4 +638,182 @@ export function parseLLMResponse<T>(response: string): T {
       }`
     );
   }
+}
+
+/**
+ * Generate evaluation queries from job documents using AI
+ * Analyzes job description and rubrics to create optimal vector DB queries
+ * @param documentTexts - Object containing extracted text from job documents
+ * @param jobType - Type of job (cv_only | cv_with_test)
+ * @returns Array of query strings for vector DB searches
+ */
+export async function generateEvaluationQueries(
+  documentTexts: DocumentTexts,
+  jobType: JobType
+): Promise<EvaluationQueries> {
+  const prompt = `You are an expert at creating semantic search queries for vector databases. Analyze the following job documents and generate optimal search queries that will help retrieve the most relevant context for evaluating candidates.
+
+JOB DOCUMENTS:
+${
+  documentTexts.jobDescription
+    ? `Job Description:\n${documentTexts.jobDescription}\n\n`
+    : ""
+}
+${
+  documentTexts.cvRubric
+    ? `CV Scoring Rubric:\n${documentTexts.cvRubric}\n\n`
+    : ""
+}
+${
+  documentTexts.caseStudyBrief
+    ? `Case Study Brief:\n${documentTexts.caseStudyBrief}\n\n`
+    : ""
+}
+${
+  documentTexts.projectRubric
+    ? `Project Scoring Rubric:\n${documentTexts.projectRubric}\n\n`
+    : ""
+}
+
+JOB TYPE: ${jobType}
+
+INSTRUCTIONS:
+1. For CV evaluation, generate 3-5 concise query strings that capture key requirements, skills, and evaluation criteria from the job description and CV rubric.
+2. Each query should be optimized for semantic search in a vector database.
+3. Queries should focus on: technical skills, experience requirements, achievements, cultural fit, and any specific job requirements.
+4. ${
+    jobType === "cv_with_test"
+      ? "For project evaluation, generate 3-5 query strings that capture project requirements, implementation criteria, code quality standards, and evaluation metrics from the case study brief and project rubric."
+      : ""
+  }
+
+RESPONSE FORMAT (JSON only, no markdown):
+{
+  "cvEvaluationQueries": ["query 1", "query 2", "query 3"],
+  ${
+    jobType === "cv_with_test"
+      ? '"projectEvaluationQueries": ["query 1", "query 2", "query 3"]'
+      : ""
+  }
+}
+
+Generate queries that are specific, focused, and will retrieve the most relevant context chunks for evaluation.`;
+
+  const response = await callLLM(prompt);
+  const parsed = parseLLMResponse<{
+    cvEvaluationQueries: string[];
+    projectEvaluationQueries?: string[];
+  }>(response);
+
+  return {
+    cvEvaluationQueries: parsed.cvEvaluationQueries || [],
+    projectEvaluationQueries: parsed.projectEvaluationQueries,
+  };
+}
+
+/**
+ * Standardize a user-provided rubric using AI
+ * Converts user input (even simple descriptions) into a structured rubric
+ * @param userRubricText - Raw rubric text from user upload
+ * @param rubricType - Type of rubric (cv | project)
+ * @param jobDescription - Optional job description for context
+ * @returns Standardized rubric structure
+ */
+export async function standardizeRubric(
+  userRubricText: string,
+  rubricType: "cv" | "project",
+  jobDescription?: string
+): Promise<StandardizedRubric> {
+  const prompt = `You are an expert at creating standardized evaluation rubrics. Convert the following user-provided rubric into a structured, standardized format.
+
+${jobDescription ? `JOB DESCRIPTION (for context):\n${jobDescription}\n\n` : ""}
+USER RUBRIC:
+${userRubricText}
+
+RUBRIC TYPE: ${rubricType}
+
+INSTRUCTIONS:
+1. Analyze the user's rubric (even if it's just a simple description like "strong in A") and extract key evaluation criteria.
+2. Create a standardized rubric with the following structure:
+   ${
+     rubricType === "cv"
+       ? `- technical_skills: Weight 0.4, with 1-5 scale descriptions
+   - experience_level: Weight 0.25, with 1-5 scale descriptions
+   - achievements: Weight 0.2, with 1-5 scale descriptions
+   - cultural_fit: Weight 0.15, with 1-5 scale descriptions`
+       : `- correctness: Weight 0.3, with 1-5 scale descriptions
+   - code_quality: Weight 0.25, with 1-5 scale descriptions
+   - resilience: Weight 0.2, with 1-5 scale descriptions
+   - documentation: Weight 0.15, with 1-5 scale descriptions
+   - creativity: Weight 0.1, with 1-5 scale descriptions`
+   }
+3. Each parameter should have:
+   - weight: A number (weights should sum to 1.0)
+   - criteria: Clear description of what this parameter evaluates
+   - scale: An object with keys 1-5, each containing a description of what that score means
+4. If the user's rubric is vague or incomplete, infer reasonable criteria based on the job description and best practices.
+5. Make the rubric straightforward, clear, and actionable.
+
+RESPONSE FORMAT (JSON only, no markdown):
+${
+  rubricType === "cv"
+    ? `{
+  "technical_skills": {
+    "weight": 0.4,
+    "criteria": "description of what technical skills are evaluated",
+    "scale": {
+      "1": "description of score 1",
+      "2": "description of score 2",
+      "3": "description of score 3",
+      "4": "description of score 4",
+      "5": "description of score 5"
+    }
+  },
+  "experience_level": {
+    "weight": 0.25,
+    "criteria": "description",
+    "scale": {"1": "...", "2": "...", "3": "...", "4": "...", "5": "..."}
+  },
+  "achievements": {
+    "weight": 0.2,
+    "criteria": "description",
+    "scale": {"1": "...", "2": "...", "3": "...", "4": "...", "5": "..."}
+  },
+  "cultural_fit": {
+    "weight": 0.15,
+    "criteria": "description",
+    "scale": {"1": "...", "2": "...", "3": "...", "4": "...", "5": "..."}
+  }
+}`
+    : `{
+  "correctness": {
+    "weight": 0.3,
+    "criteria": "description",
+    "scale": {"1": "...", "2": "...", "3": "...", "4": "...", "5": "..."}
+  },
+  "code_quality": {
+    "weight": 0.25,
+    "criteria": "description",
+    "scale": {"1": "...", "2": "...", "3": "...", "4": "...", "5": "..."}
+  },
+  "resilience": {
+    "weight": 0.2,
+    "criteria": "description",
+    "scale": {"1": "...", "2": "...", "3": "...", "4": "...", "5": "..."}
+  },
+  "documentation": {
+    "weight": 0.15,
+    "criteria": "description",
+    "scale": {"1": "...", "2": "...", "3": "...", "4": "...", "5": "..."}
+  },
+  "creativity": {
+    "weight": 0.1,
+    "criteria": "description",
+    "scale": {"1": "...", "2": "...", "3": "...", "4": "...", "5": "..."}
+  }
+}`
+}`;
+
+  const response = await callLLM(prompt);
+  return parseLLMResponse(response);
 }

@@ -1,8 +1,8 @@
 import { Elysia } from "elysia";
-import { saveFile } from "../services/storage.service";
-import { FileModel } from "../models/file.model";
+import { saveFile } from "../../../services/storage.service";
+import { FileModel } from "../../../models/file.model";
 
-export const uploadController = new Elysia({ prefix: "/upload" }).post(
+export const uploadController = new Elysia().post(
   "",
   async ({ request }) => {
     try {
@@ -40,10 +40,10 @@ export const uploadController = new Elysia({ prefix: "/upload" }).post(
       const cvFile = formData.get("cv") as File | null;
       const reportFile = formData.get("report") as File | null;
 
-      if (!cvFile || !reportFile) {
+      if (!cvFile) {
         return {
           success: false,
-          error: "Both CV and Report files are required",
+          error: "CV file is required",
           cvId: null,
           reportId: null,
         };
@@ -59,7 +59,7 @@ export const uploadController = new Elysia({ prefix: "/upload" }).post(
           reportId: null,
         };
       }
-      if (!allowedMimeTypes.includes(reportFile.type)) {
+      if (reportFile && !allowedMimeTypes.includes(reportFile.type)) {
         return {
           success: false,
           error: "Report file must be a PDF",
@@ -74,10 +74,6 @@ export const uploadController = new Elysia({ prefix: "/upload" }).post(
         "cv"
       );
 
-      // Save Report file
-      const { filePath: reportFilePath, filename: reportFilename } =
-        await saveFile(reportFile, "report");
-
       // Save file metadata to MongoDB
       const cvDocument = await FileModel.create({
         filename: cvFilename,
@@ -88,20 +84,27 @@ export const uploadController = new Elysia({ prefix: "/upload" }).post(
         size: cvFile.size,
       });
 
-      const reportDocument = await FileModel.create({
-        filename: reportFilename,
-        originalName: reportFile.name,
-        fileType: "report",
-        filePath: reportFilePath,
-        mimeType: reportFile.type,
-        size: reportFile.size,
-      });
+      let reportDocument = null;
+      if (reportFile) {
+        // Save Report file
+        const { filePath: reportFilePath, filename: reportFilename } =
+          await saveFile(reportFile, "report");
+
+        reportDocument = await FileModel.create({
+          filename: reportFilename,
+          originalName: reportFile.name,
+          fileType: "report",
+          filePath: reportFilePath,
+          mimeType: reportFile.type,
+          size: reportFile.size,
+        });
+      }
 
       return {
         success: true,
         message: "Files uploaded successfully",
         cvId: cvDocument._id.toString(),
-        reportId: reportDocument._id.toString(),
+        reportId: reportDocument?._id.toString() || null,
       };
     } catch (error) {
       console.error("Error uploading files:", error);
@@ -117,9 +120,9 @@ export const uploadController = new Elysia({ prefix: "/upload" }).post(
   },
   {
     detail: {
-      summary: "Upload CV and Project Report",
+      summary: "Upload Applicant CV and Project Report",
       description:
-        "Handles file uploads for CV and Project Report PDFs. Returns unique IDs for uploaded files. Accepts multipart/form-data with 'cv' and 'report' fields.",
+        "Handles file uploads for applicant CV (required) and optional Project Report PDFs. Returns unique IDs for uploaded files. Accepts multipart/form-data with 'cv' (required) and 'report' (optional) fields.",
       tags: ["Upload"],
       requestBody: {
         required: true,
@@ -127,17 +130,17 @@ export const uploadController = new Elysia({ prefix: "/upload" }).post(
           "multipart/form-data": {
             schema: {
               type: "object",
-              required: ["cv", "report"],
+              required: ["cv"],
               properties: {
                 cv: {
                   type: "string",
                   format: "binary",
-                  description: "CV PDF file",
+                  description: "CV PDF file (required)",
                 },
                 report: {
                   type: "string",
                   format: "binary",
-                  description: "Project Report PDF file",
+                  description: "Project Report PDF file (optional)",
                 },
               },
             },
@@ -155,7 +158,7 @@ export const uploadController = new Elysia({ prefix: "/upload" }).post(
                   success: { type: "boolean" },
                   message: { type: "string" },
                   cvId: { type: "string" },
-                  reportId: { type: "string" },
+                  reportId: { type: "string", nullable: true },
                 },
               },
             },

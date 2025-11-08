@@ -1,13 +1,7 @@
 import { Queue } from "bullmq";
 import { Redis } from "ioredis";
 import { getRedisClient } from "../config/redis";
-
-export interface EvaluationJobData {
-  jobId: string;
-  cvId: string;
-  reportId: string;
-  jobTitle: string;
-}
+import { EvaluationJobData } from "../types/jobs";
 
 // Create the evaluation queue
 // Note: This will be initialized after Redis connection is established

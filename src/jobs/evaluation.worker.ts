@@ -2,8 +2,9 @@ import { Worker, Job } from "bullmq";
 import { Redis } from "ioredis";
 import { getRedisClient } from "../config/redis";
 import { JobModel } from "../models/job.model";
+import { JobVacancyModel } from "../models/job-vacancy.model";
 import { FileModel } from "../models/file.model";
-import { EvaluationJobData } from "./evaluation.queue";
+import { EvaluationJobData } from "../types/jobs";
 import { extractTextFromPDF } from "../services/pdf.service";
 import {
   queryVectorDB,
@@ -15,6 +16,13 @@ import {
   parseLLMResponse,
 } from "../services/ai.service";
 import { getFilePath } from "../services/storage.service";
+import {
+  CVEvaluationResult,
+  ProjectEvaluationResult,
+  SummaryResult,
+  CVResults,
+  ProjectResults,
+} from "../types/services";
 
 // Create the evaluation worker
 // Note: This will be initialized after Redis connection is established
@@ -41,16 +49,25 @@ export const getEvaluationWorker = (): Worker<EvaluationJobData> => {
     evaluationWorker = new Worker<EvaluationJobData>(
       "evaluation",
       async (job: Job<EvaluationJobData>) => {
-        const { jobId, cvId, reportId, jobTitle } = job.data;
+        const { jobId, cvId, reportId, vacancyId } = job.data;
         const startTime = Date.now();
 
         await logToJob(
           job,
           `\n🔄 [${new Date().toISOString()}] Processing job ${jobId}`
         );
-        await logToJob(job, `   Job Title: ${jobTitle}`);
+        await logToJob(job, `   Vacancy ID: ${vacancyId}`);
         await logToJob(job, `   CV ID: ${cvId}`);
-        await logToJob(job, `   Report ID: ${reportId}`);
+        await logToJob(job, `   Report ID: ${reportId || "N/A"}`);
+
+        // Fetch job vacancy
+        const vacancy = await JobVacancyModel.findOne({ vacancyId });
+        if (!vacancy) {
+          throw new Error(`Job vacancy with ID ${vacancyId} not found`);
+        }
+
+        await logToJob(job, `   Job Title: ${vacancy.title}`);
+        await logToJob(job, `   Job Type: ${vacancy.type}`);
 
         try {
           // Update job status to processing
@@ -66,17 +83,26 @@ export const getEvaluationWorker = (): Worker<EvaluationJobData> => {
           // Retrieve file documents
           await logToJob(job, `   Retrieving file documents...`);
           const cvFile = await FileModel.findById(cvId);
-          const reportFile = await FileModel.findById(reportId);
 
           if (!cvFile) {
             throw new Error(`CV file with ID ${cvId} not found`);
           }
-          if (!reportFile) {
-            throw new Error(`Report file with ID ${reportId} not found`);
-          }
 
           await logToJob(job, `   ✓ CV file: ${cvFile.filename}`);
-          await logToJob(job, `   ✓ Report file: ${reportFile.filename}`);
+
+          // Only fetch report file if required
+          let reportFile = null;
+          if (reportId) {
+            reportFile = await FileModel.findById(reportId);
+            if (!reportFile) {
+              throw new Error(`Report file with ID ${reportId} not found`);
+            }
+            await logToJob(job, `   ✓ Report file: ${reportFile.filename}`);
+          } else if (vacancy.type === "cv_with_test") {
+            throw new Error(
+              "Report file is required for cv_with_test job vacancies"
+            );
+          }
 
           /* CV Evaluation 
           
@@ -112,11 +138,28 @@ export const getEvaluationWorker = (): Worker<EvaluationJobData> => {
 
           // RAG query for CV evaluation context using cosine similarity
           await logToJob(job, `   Querying ChromaDB with cosine similarity...`);
-          await logToJob(job, `   Collections: cv_rubric, job_description`);
+          await logToJob(
+            job,
+            `   Collections: cv_rubrics, job_documents (filtered by vacancy ${vacancyId})`
+          );
+
+          // Use vacancy-specific queries if available, otherwise use CV text
+          const cvQuery =
+            vacancy.cvEvaluationQueries &&
+            vacancy.cvEvaluationQueries.length > 0
+              ? vacancy.cvEvaluationQueries[0]
+              : cvText;
+
+          await logToJob(
+            job,
+            `   Using query: ${cvQuery.substring(0, 100)}...`
+          );
+
           const cvContextWithScores = await queryVectorDBWithCosineSimilarity(
-            cvText,
-            ["cv_rubric", "job_description"],
-            10
+            cvQuery,
+            ["cv_rubrics", "job_documents"],
+            10,
+            vacancyId
           );
 
           // Log similarity scores and detailed chunks
@@ -176,13 +219,7 @@ export const getEvaluationWorker = (): Worker<EvaluationJobData> => {
           await logToJob(job, `   --- End of CV LLM Response ---`);
 
           await logToJob(job, `   Parsing LLM response...`);
-          const cvEvaluation = parseLLMResponse<{
-            technical_skills: number;
-            experience_level: number;
-            achievements: number;
-            cultural_fit: number;
-            feedback: string;
-          }>(cvResponse);
+          const cvEvaluation = parseLLMResponse<CVEvaluationResult>(cvResponse);
 
           // Log parsed evaluation result
           await logToJob(job, `   --- CV Parsed Evaluation Result ---`);
@@ -208,12 +245,13 @@ export const getEvaluationWorker = (): Worker<EvaluationJobData> => {
             `      - Cultural Fit: ${cvEvaluation.cultural_fit}/5 (weight: 0.15)`
           );
 
-          // Calculate weighted CV match rate
+          // Calculate weighted CV match rate using standardized rubric weights
+          const cvRubric = vacancy.standardizedCvRubric;
           const cvWeightedScore =
-            cvEvaluation.technical_skills * 0.4 +
-            cvEvaluation.experience_level * 0.25 +
-            cvEvaluation.achievements * 0.2 +
-            cvEvaluation.cultural_fit * 0.15;
+            cvEvaluation.technical_skills * cvRubric.technical_skills.weight +
+            cvEvaluation.experience_level * cvRubric.experience_level.weight +
+            cvEvaluation.achievements * cvRubric.achievements.weight +
+            cvEvaluation.cultural_fit * cvRubric.cultural_fit.weight;
 
           // Convert to 0-1 scale (multiply by 0.2)
           const cvMatchRate = (cvWeightedScore / 5) * 0.2;
@@ -231,6 +269,7 @@ export const getEvaluationWorker = (): Worker<EvaluationJobData> => {
 
           /* Project Evaluation 
           
+          - Only run if vacancy type is cv_with_test
           - Compare project report embedding with documents from ChromaDB using explicit cosine similarity
           - Extract just the text and metadata (remove similarity scores for prompt building)
           - Build project evaluation prompt
@@ -239,155 +278,188 @@ export const getEvaluationWorker = (): Worker<EvaluationJobData> => {
           - Convert to 0-1 scale (multiply by 0.2)
           - Log project match rate
           */
-          await logToJob(
-            job,
-            `========== STAGE 2: Project Evaluation for job ${jobId} ==========\n`
-          );
 
-          // Extract report text
-          await logToJob(job, `   Extracting text from project report PDF...`);
-          const reportFilePath = getFilePath(reportFile.filename);
-          const reportText = await extractTextFromPDF(reportFilePath);
-          await logToJob(
-            job,
-            `   ✓ Extracted ${reportText.length} characters from report`
-          );
-          // Log report text preview
-          const reportPreview =
-            reportText.length > 1000
-              ? reportText.substring(0, 1000) + "... [truncated]"
-              : reportText;
-          await logToJob(job, `   --- Project Report Text Preview ---`);
-          await logToJob(job, reportPreview);
-          await logToJob(job, `   --- End of Report Text Preview ---`);
+          // Initialize project evaluation variables
+          let projectScore = 0;
+          let projectEvaluation: ProjectEvaluationResult | null = null;
 
-          // RAG query for project evaluation context
-          await logToJob(
-            job,
-            `   Querying ChromaDB for project evaluation context...`
-          );
-          await logToJob(
-            job,
-            `   Collections: project_rubric, case_study_brief`
-          );
-          const projectContext = await queryVectorDB(
-            "project implementation requirements, code quality, RAG implementation, scoring rubric, weights",
-            ["project_rubric", "case_study_brief"],
-            10
-          );
-          await logToJob(
-            job,
-            `   ✓ Retrieved ${projectContext.length} context chunks`
-          );
+          // Only evaluate project if vacancy type is cv_with_test
+          if (vacancy.type !== "cv_with_test") {
+            await logToJob(
+              job,
+              `========== STAGE 2: Project Evaluation SKIPPED (job type is cv_only) ==========\n`
+            );
+          } else {
+            await logToJob(
+              job,
+              `========== STAGE 2: Project Evaluation for job ${jobId} ==========\n`
+            );
 
-          // Log detailed project context chunks
-          if (projectContext.length > 0) {
-            await logToJob(job, `   --- Project Context Chunks ---`);
-            for (const [idx, chunk] of projectContext.entries()) {
-              const source = chunk.metadata?.source || "unknown";
-              const chunkIndex = chunk.metadata?.chunk_index ?? "N/A";
-              await logToJob(
-                job,
-                `      [${
-                  idx + 1
-                }] Source: ${source} | Chunk Index: ${chunkIndex}`
-              );
-              // Log full chunk text (truncated if too long)
-              const chunkPreview =
-                chunk.text.length > 500
-                  ? chunk.text.substring(0, 500) + "... [truncated]"
-                  : chunk.text;
-              await logToJob(job, `         Chunk Text: ${chunkPreview}`);
+            // Extract report text
+            await logToJob(
+              job,
+              `   Extracting text from project report PDF...`
+            );
+            const reportFilePath = getFilePath(reportFile.filename);
+            const reportText = await extractTextFromPDF(reportFilePath);
+            await logToJob(
+              job,
+              `   ✓ Extracted ${reportText.length} characters from report`
+            );
+            // Log report text preview
+            const reportPreview =
+              reportText.length > 1000
+                ? reportText.substring(0, 1000) + "... [truncated]"
+                : reportText;
+            await logToJob(job, `   --- Project Report Text Preview ---`);
+            await logToJob(job, reportPreview);
+            await logToJob(job, `   --- End of Report Text Preview ---`);
+
+            // RAG query for project evaluation context
+            await logToJob(
+              job,
+              `   Querying ChromaDB for project evaluation context...`
+            );
+            await logToJob(
+              job,
+              `   Collections: project_rubrics, case_studies (filtered by vacancy ${vacancyId})`
+            );
+
+            // Use vacancy-specific queries if available
+            const projectQuery =
+              vacancy.projectEvaluationQueries &&
+              vacancy.projectEvaluationQueries.length > 0
+                ? vacancy.projectEvaluationQueries[0]
+                : "project implementation requirements, code quality, RAG implementation, scoring rubric, weights";
+
+            await logToJob(
+              job,
+              `   Using query: ${projectQuery.substring(0, 100)}...`
+            );
+
+            const projectContext = await queryVectorDB(
+              projectQuery,
+              ["project_rubrics", "case_studies"],
+              10,
+              vacancyId
+            );
+            await logToJob(
+              job,
+              `   ✓ Retrieved ${projectContext.length} context chunks`
+            );
+
+            // Log detailed project context chunks
+            if (projectContext.length > 0) {
+              await logToJob(job, `   --- Project Context Chunks ---`);
+              for (const [idx, chunk] of projectContext.entries()) {
+                const source = chunk.metadata?.source || "unknown";
+                const chunkIndex = chunk.metadata?.chunk_index ?? "N/A";
+                await logToJob(
+                  job,
+                  `      [${
+                    idx + 1
+                  }] Source: ${source} | Chunk Index: ${chunkIndex}`
+                );
+                // Log full chunk text (truncated if too long)
+                const chunkPreview =
+                  chunk.text.length > 500
+                    ? chunk.text.substring(0, 500) + "... [truncated]"
+                    : chunk.text;
+                await logToJob(job, `         Chunk Text: ${chunkPreview}`);
+              }
+              await logToJob(job, `   --- End of Project Context Chunks ---`);
             }
-            await logToJob(job, `   --- End of Project Context Chunks ---`);
-          }
 
-          // Build project evaluation prompt
-          await logToJob(job, `   Building project evaluation prompt...`);
-          const projectPrompt = buildProjectEvaluationPrompt(
-            reportText,
-            projectContext
-          );
-          await logToJob(
-            job,
-            `   ✓ Project Prompt length: ${projectPrompt.length} characters`
-          );
-          // Log full prompt
-          await logToJob(job, `   --- Project Evaluation Prompt ---`);
-          await logToJob(job, projectPrompt);
-          await logToJob(job, `   --- End of Project Prompt ---`);
+            // Build project evaluation prompt
+            await logToJob(job, `   Building project evaluation prompt...`);
+            const projectPrompt = buildProjectEvaluationPrompt(
+              reportText,
+              projectContext
+            );
+            await logToJob(
+              job,
+              `   ✓ Project Prompt length: ${projectPrompt.length} characters`
+            );
+            // Log full prompt
+            await logToJob(job, `   --- Project Evaluation Prompt ---`);
+            await logToJob(job, projectPrompt);
+            await logToJob(job, `   --- End of Project Prompt ---`);
 
-          // Call LLM for project evaluation
-          await logToJob(job, `   Calling LLM for project evaluation...`);
-          const projectLLMStartTime = Date.now();
-          const projectResponse = await callLLM(projectPrompt);
-          const projectLLMTime = Date.now() - projectLLMStartTime;
-          await logToJob(
-            job,
-            `   ✓ LLM response received (${projectLLMTime}ms)`
-          );
+            // Call LLM for project evaluation
+            await logToJob(job, `   Calling LLM for project evaluation...`);
+            const projectLLMStartTime = Date.now();
+            const projectResponse = await callLLM(projectPrompt);
+            const projectLLMTime = Date.now() - projectLLMStartTime;
+            await logToJob(
+              job,
+              `   ✓ LLM response received (${projectLLMTime}ms)`
+            );
 
-          // Log full LLM response
-          await logToJob(job, `   --- Project LLM Raw Response ---`);
-          await logToJob(job, projectResponse);
-          await logToJob(job, `   --- End of Project LLM Response ---`);
+            // Log full LLM response
+            await logToJob(job, `   --- Project LLM Raw Response ---`);
+            await logToJob(job, projectResponse);
+            await logToJob(job, `   --- End of Project LLM Response ---`);
 
-          await logToJob(job, `   Parsing LLM response...`);
-          const projectEvaluation = parseLLMResponse<{
-            correctness: number;
-            code_quality: number;
-            resilience: number;
-            documentation: number;
-            creativity: number;
-            feedback: string;
-          }>(projectResponse);
+            await logToJob(job, `   Parsing LLM response...`);
+            projectEvaluation =
+              parseLLMResponse<ProjectEvaluationResult>(projectResponse);
 
-          // Log parsed evaluation result
-          await logToJob(job, `   --- Project Parsed Evaluation Result ---`);
-          await logToJob(job, JSON.stringify(projectEvaluation, null, 2));
-          await logToJob(job, `   --- End of Project Evaluation Result ---`);
+            // Log parsed evaluation result
+            await logToJob(job, `   --- Project Parsed Evaluation Result ---`);
+            await logToJob(job, JSON.stringify(projectEvaluation, null, 2));
+            await logToJob(job, `   --- End of Project Evaluation Result ---`);
 
-          // Log detailed scores
-          await logToJob(job, `   ✓ Project Evaluation Scores:`);
-          await logToJob(
-            job,
-            `      - Correctness: ${projectEvaluation.correctness}/5 (weight: 0.3)`
-          );
-          await logToJob(
-            job,
-            `      - Code Quality: ${projectEvaluation.code_quality}/5 (weight: 0.25)`
-          );
-          await logToJob(
-            job,
-            `      - Resilience: ${projectEvaluation.resilience}/5 (weight: 0.2)`
-          );
-          await logToJob(
-            job,
-            `      - Documentation: ${projectEvaluation.documentation}/5 (weight: 0.15)`
-          );
-          await logToJob(
-            job,
-            `      - Creativity: ${projectEvaluation.creativity}/5 (weight: 0.1)`
-          );
+            // Log detailed scores
+            await logToJob(job, `   ✓ Project Evaluation Scores:`);
+            await logToJob(
+              job,
+              `      - Correctness: ${projectEvaluation.correctness}/5 (weight: 0.3)`
+            );
+            await logToJob(
+              job,
+              `      - Code Quality: ${projectEvaluation.code_quality}/5 (weight: 0.25)`
+            );
+            await logToJob(
+              job,
+              `      - Resilience: ${projectEvaluation.resilience}/5 (weight: 0.2)`
+            );
+            await logToJob(
+              job,
+              `      - Documentation: ${projectEvaluation.documentation}/5 (weight: 0.15)`
+            );
+            await logToJob(
+              job,
+              `      - Creativity: ${projectEvaluation.creativity}/5 (weight: 0.1)`
+            );
 
-          // Calculate weighted project score
-          const projectScore =
-            projectEvaluation.correctness * 0.3 +
-            projectEvaluation.code_quality * 0.25 +
-            projectEvaluation.resilience * 0.2 +
-            projectEvaluation.documentation * 0.15 +
-            projectEvaluation.creativity * 0.1;
+            // Calculate weighted project score using standardized rubric weights
+            const projectRubric = vacancy.standardizedProjectRubric;
+            if (!projectRubric) {
+              throw new Error(
+                "Standardized project rubric not found for cv_with_test vacancy"
+              );
+            }
 
-          await logToJob(
-            job,
-            `   ✓ Weighted Score: ${projectScore.toFixed(2)}/5`
-          );
-          await logToJob(
-            job,
-            `   ✓ Project Score: ${projectScore.toFixed(4)}/5 (${(
-              projectScore * 20
-            ).toFixed(2)}%)`
-          );
+            const projectScore =
+              projectEvaluation.correctness * projectRubric.correctness.weight +
+              projectEvaluation.code_quality *
+                projectRubric.code_quality.weight +
+              projectEvaluation.resilience * projectRubric.resilience.weight +
+              projectEvaluation.documentation *
+                projectRubric.documentation.weight +
+              projectEvaluation.creativity * projectRubric.creativity.weight;
+
+            await logToJob(
+              job,
+              `   ✓ Weighted Score: ${projectScore.toFixed(2)}/5`
+            );
+            await logToJob(
+              job,
+              `   ✓ Project Score: ${projectScore.toFixed(4)}/5 (${(
+                projectScore * 20
+              ).toFixed(2)}%)`
+            );
+          } // End of project evaluation else block
 
           /* Overall Summary 
           
@@ -401,7 +473,7 @@ export const getEvaluationWorker = (): Worker<EvaluationJobData> => {
             `========== STAGE 3: Overall Summary for job ${jobId} ==========\n`
           );
 
-          const cvResults = {
+          const cvResults: CVResults = {
             cv_match_rate: cvMatchRate,
             cv_feedback: cvEvaluation.feedback,
             cv_detailed_scores: {
@@ -412,17 +484,19 @@ export const getEvaluationWorker = (): Worker<EvaluationJobData> => {
             },
           };
 
-          const projectResults = {
-            project_score: projectScore,
-            project_feedback: projectEvaluation.feedback,
-            project_detailed_scores: {
-              correctness: projectEvaluation.correctness,
-              code_quality: projectEvaluation.code_quality,
-              resilience: projectEvaluation.resilience,
-              documentation: projectEvaluation.documentation,
-              creativity: projectEvaluation.creativity,
-            },
-          };
+          const projectResults: ProjectResults | null = projectEvaluation
+            ? {
+                project_score: projectScore,
+                project_feedback: projectEvaluation.feedback,
+                project_detailed_scores: {
+                  correctness: projectEvaluation.correctness,
+                  code_quality: projectEvaluation.code_quality,
+                  resilience: projectEvaluation.resilience,
+                  documentation: projectEvaluation.documentation,
+                  creativity: projectEvaluation.creativity,
+                },
+              }
+            : null;
 
           // Build summary prompt
           await logToJob(job, `   Building overall summary prompt...`);
@@ -452,9 +526,7 @@ export const getEvaluationWorker = (): Worker<EvaluationJobData> => {
           await logToJob(job, `   --- End of Summary LLM Response ---`);
 
           await logToJob(job, `   Parsing LLM response...`);
-          const summary = parseLLMResponse<{
-            overall_summary: string;
-          }>(summaryResponse);
+          const summary = parseLLMResponse<SummaryResult>(summaryResponse);
           await logToJob(
             job,
             `   ✓ Summary length: ${summary.overall_summary.length} characters`
@@ -468,15 +540,20 @@ export const getEvaluationWorker = (): Worker<EvaluationJobData> => {
           // ============================================
           // Compile Final Result
           // ============================================
-          const result = {
+          const result: any = {
             cv_match_rate: cvMatchRate,
             cv_feedback: cvEvaluation.feedback,
             cv_detailed_scores: cvResults.cv_detailed_scores,
-            project_score: projectScore,
-            project_feedback: projectEvaluation.feedback,
-            project_detailed_scores: projectResults.project_detailed_scores,
             overall_summary: summary.overall_summary,
           };
+
+          // Add project results if available
+          if (projectResults) {
+            result.project_score = projectResults.project_score;
+            result.project_feedback = projectResults.project_feedback;
+            result.project_detailed_scores =
+              projectResults.project_detailed_scores;
+          }
 
           // Update job status to completed
           await logToJob(job, `   Saving results to database...`);
@@ -507,12 +584,14 @@ export const getEvaluationWorker = (): Worker<EvaluationJobData> => {
               cvMatchRate * 100
             ).toFixed(2)}%)`
           );
-          await logToJob(
-            job,
-            `      - Project Score: ${projectScore.toFixed(2)}/5 (${(
-              projectScore * 20
-            ).toFixed(2)}%)`
-          );
+          if (projectScore > 0) {
+            await logToJob(
+              job,
+              `      - Project Score: ${projectScore.toFixed(2)}/5 (${(
+                projectScore * 20
+              ).toFixed(2)}%)`
+            );
+          }
           await logToJob(
             job,
             `      - Overall Summary: ${summary.overall_summary.substring(

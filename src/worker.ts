@@ -1,6 +1,7 @@
 import { connectDB } from "./config/db";
 import { connectRedis } from "./config/redis";
 import { getEvaluationWorker } from "./jobs/evaluation.worker";
+import { getJobVacancyIngestionWorker } from "./jobs/job-vacancy-ingestion.worker";
 
 const startWorker = async () => {
   try {
@@ -10,13 +11,17 @@ const startWorker = async () => {
     await connectDB();
     await connectRedis();
 
-    // Start the worker
-    const worker = getEvaluationWorker();
-    console.log("worker started");
+    // Start the workers
+    const evaluationWorker = getEvaluationWorker();
+    const jobVacancyIngestionWorker = getJobVacancyIngestionWorker();
+    console.log("workers started");
     // Handle graceful shutdown
     const shutdown = async () => {
-      console.log("shutting down worker...");
-      await worker.close();
+      console.log("shutting down workers...");
+      await Promise.all([
+        evaluationWorker.close(),
+        jobVacancyIngestionWorker.close(),
+      ]);
       process.exit(0);
     };
 

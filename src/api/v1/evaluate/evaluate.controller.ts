@@ -1,31 +1,47 @@
 import { Elysia } from "elysia";
-import { JobModel } from "../models/job.model";
-import { FileModel } from "../models/file.model";
-import { addEvaluationJob } from "../jobs/evaluation.queue";
+import { JobModel } from "../../../models/job.model";
+import { JobVacancyModel } from "../../../models/job-vacancy.model";
+import { FileModel } from "../../../models/file.model";
+import { addEvaluationJob } from "../../../jobs/evaluation.queue";
 import { randomUUID } from "crypto";
+import { EvaluationJobData } from "../../../types/jobs";
 
-export const evaluateController = new Elysia({ prefix: "/evaluate" }).post(
-  "/",
+export const evaluateController = new Elysia().post(
+  "",
   async ({ body }) => {
     try {
-      const { jobTitle, cvId, reportId } = body as {
-        jobTitle?: string;
+      const { vacancyId, cvId, reportId } = body as {
+        vacancyId?: string;
         cvId?: string;
         reportId?: string;
       };
 
       // Validate input
-      if (!jobTitle || !cvId || !reportId) {
+      if (!vacancyId || !cvId) {
         return {
           success: false,
-          error: "jobTitle, cvId, and reportId are required",
+          error: "vacancyId and cvId are required",
         };
       }
 
-      // Validate files exist
-      const cvFile = await FileModel.findById(cvId);
-      const reportFile = await FileModel.findById(reportId);
+      // Validate vacancy exists and is active
+      const vacancy = await JobVacancyModel.findOne({ vacancyId });
+      if (!vacancy) {
+        return {
+          success: false,
+          error: `Job vacancy with ID ${vacancyId} not found`,
+        };
+      }
 
+      if (vacancy.status !== "active") {
+        return {
+          success: false,
+          error: `Job vacancy with ID ${vacancyId} is not active`,
+        };
+      }
+
+      // Validate CV file exists
+      const cvFile = await FileModel.findById(cvId);
       if (!cvFile) {
         return {
           success: false,
@@ -33,30 +49,46 @@ export const evaluateController = new Elysia({ prefix: "/evaluate" }).post(
         };
       }
 
-      if (!reportFile) {
+      // Validate report file if provided or required
+      let reportFile = null;
+      if (reportId) {
+        reportFile = await FileModel.findById(reportId);
+        if (!reportFile) {
+          return {
+            success: false,
+            error: `Report file with ID ${reportId} not found`,
+          };
+        }
+      }
+
+      // Validate report requirement based on vacancy type
+      if (vacancy.type === "cv_with_test" && !reportId) {
         return {
           success: false,
-          error: `Report file with ID ${reportId} not found`,
+          error: "reportId is required for cv_with_test job vacancies",
         };
       }
 
       // Generate unique job ID
       const jobId = randomUUID();
 
+      // Prepare file IDs array
+      const fileIds = reportId ? [cvId, reportId] : [cvId];
+
       // Create job document in MongoDB
       const job = await JobModel.create({
         jobId,
         status: "queued",
-        fileIds: [cvId, reportId],
-        jobTitle,
+        fileIds,
+        vacancyId,
       });
 
       // Add job to BullMQ queue
       await addEvaluationJob({
         jobId,
         cvId,
-        reportId,
-        jobTitle,
+        reportId: reportId || "",
+        vacancyId,
       });
 
       return {
@@ -79,7 +111,7 @@ export const evaluateController = new Elysia({ prefix: "/evaluate" }).post(
     detail: {
       summary: "Create Evaluation Job",
       description:
-        "Creates an evaluation job, stores it in MongoDB, and adds it to the BullMQ queue. Returns job ID and status.",
+        "Creates an evaluation job for a specific job vacancy, stores it in MongoDB, and adds it to the BullMQ queue. Returns job ID and status.",
       tags: ["Evaluate"],
       requestBody: {
         required: true,
@@ -87,11 +119,11 @@ export const evaluateController = new Elysia({ prefix: "/evaluate" }).post(
           "application/json": {
             schema: {
               type: "object",
-              required: ["jobTitle", "cvId", "reportId"],
+              required: ["vacancyId", "cvId"],
               properties: {
-                jobTitle: {
+                vacancyId: {
                   type: "string",
-                  description: "Job title or description",
+                  description: "ID of the job vacancy to evaluate against",
                 },
                 cvId: {
                   type: "string",
@@ -99,7 +131,8 @@ export const evaluateController = new Elysia({ prefix: "/evaluate" }).post(
                 },
                 reportId: {
                   type: "string",
-                  description: "ID of the uploaded project report file",
+                  description:
+                    "ID of the uploaded project report file (required if vacancy type is cv_with_test)",
                 },
               },
             },

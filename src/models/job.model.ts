@@ -3,8 +3,8 @@ import mongoose, { Schema, Document } from "mongoose";
 export interface IJob extends Document {
   jobId: string; // Unique job identifier
   status: "queued" | "processing" | "completed" | "failed";
-  fileIds: string[]; // Array of file IDs (CVs to evaluate)
-  jobTitle: string; // Job title/description
+  fileIds: string[]; // Array of file IDs (CV and optional report to evaluate)
+  vacancyId: string; // Reference to job vacancy
   result?: {
     cv_match_rate: number; // 0-1 decimal
     cv_feedback: string;
@@ -49,9 +49,10 @@ const JobSchema = new Schema<IJob>(
       type: [String],
       required: true,
     },
-    jobTitle: {
+    vacancyId: {
       type: String,
       required: true,
+      index: true,
     },
     result: {
       type: Schema.Types.Mixed,
