@@ -532,19 +532,22 @@ PROJECT REPORT TO EVALUATE:
 ${reportText}
 
 INSTRUCTIONS:
-1. Use the scoring rubric and case study requirements from the reference context above to evaluate the project.
-2. Score each parameter on a 1-5 scale according to the rubric provided in the context.
-3. The rubric should specify the parameters, weights, and scoring criteria. If the context contains a scoring rubric, follow it exactly.
-4. Evaluate parameters such as: Correctness (Prompt & Chaining), Code Quality & Structure, Resilience & Error Handling, Documentation & Explanation, and Creativity/Bonus.
+1. FIRST, determine if the provided document is actually a project report deliverable. If it is a CV, resume, job description, or any other type of document that is NOT a project report, set "is_relevant" to false and provide feedback explaining why it's not relevant. Do NOT provide scores in this case.
+2. If the document IS a project report, set "is_relevant" to true and proceed with evaluation.
+3. Use the scoring rubric and case study requirements from the reference context above to evaluate the project.
+4. Score each parameter on a 1-5 scale according to the rubric provided in the context.
+5. The rubric should specify the parameters, weights, and scoring criteria. If the context contains a scoring rubric, follow it exactly.
+6. Evaluate parameters such as: Correctness (Prompt & Chaining), Code Quality & Structure, Resilience & Error Handling, Documentation & Explanation, and Creativity/Bonus.
 
 RESPONSE FORMAT (JSON only, no markdown):
 {
-  "correctness": <number 1-5>,
-  "code_quality": <number 1-5>,
-  "resilience": <number 1-5>,
-  "documentation": <number 1-5>,
-  "creativity": <number 1-5>,
-  "feedback": "<detailed feedback string explaining the scores and how they align with the rubric>"
+  "is_relevant": <boolean - true if document is a project report, false otherwise>,
+  "correctness": <number 1-5, only if is_relevant is true>,
+  "code_quality": <number 1-5, only if is_relevant is true>,
+  "resilience": <number 1-5, only if is_relevant is true>,
+  "documentation": <number 1-5, only if is_relevant is true>,
+  "creativity": <number 1-5, only if is_relevant is true>,
+  "feedback": "<detailed feedback string explaining the scores and how they align with the rubric, or explaining why the document is not relevant>"
 }`;
 }
 

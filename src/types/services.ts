@@ -61,6 +61,7 @@ export interface ProjectEvaluationResult {
   documentation: number;
   creativity: number;
   feedback: string;
+  is_relevant?: boolean; // If false, the document is not a project report and scores should not be used
 }
 
 /**

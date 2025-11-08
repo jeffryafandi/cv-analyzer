@@ -254,7 +254,7 @@ export const getEvaluationWorker = (): Worker<EvaluationJobData> => {
             cvEvaluation.cultural_fit * cvRubric.cultural_fit.weight;
 
           // Convert to 0-1 scale (multiply by 0.2)
-          const cvMatchRate = (cvWeightedScore / 5) * 0.2;
+          const cvMatchRate = cvWeightedScore / 5;
 
           await logToJob(
             job,
@@ -409,56 +409,88 @@ export const getEvaluationWorker = (): Worker<EvaluationJobData> => {
             await logToJob(job, JSON.stringify(projectEvaluation, null, 2));
             await logToJob(job, `   --- End of Project Evaluation Result ---`);
 
-            // Log detailed scores
-            await logToJob(job, `   ✓ Project Evaluation Scores:`);
-            await logToJob(
-              job,
-              `      - Correctness: ${projectEvaluation.correctness}/5 (weight: 0.3)`
-            );
-            await logToJob(
-              job,
-              `      - Code Quality: ${projectEvaluation.code_quality}/5 (weight: 0.25)`
-            );
-            await logToJob(
-              job,
-              `      - Resilience: ${projectEvaluation.resilience}/5 (weight: 0.2)`
-            );
-            await logToJob(
-              job,
-              `      - Documentation: ${projectEvaluation.documentation}/5 (weight: 0.15)`
-            );
-            await logToJob(
-              job,
-              `      - Creativity: ${projectEvaluation.creativity}/5 (weight: 0.1)`
-            );
+            // Check if document is relevant
+            const isRelevant = projectEvaluation.is_relevant !== false; // Default to true if not specified
 
-            // Calculate weighted project score using standardized rubric weights
-            const projectRubric = vacancy.standardizedProjectRubric;
-            if (!projectRubric) {
-              throw new Error(
-                "Standardized project rubric not found for cv_with_test vacancy"
+            if (!isRelevant) {
+              await logToJob(
+                job,
+                `   ⚠ Document is not a project report - skipping detailed scores`
               );
+              await logToJob(job, `   Feedback: ${projectEvaluation.feedback}`);
+              // Set projectScore to 0 for irrelevant documents
+              projectScore = 0;
+            } else {
+              // Verify all required score fields are present
+              if (
+                typeof projectEvaluation.correctness !== "number" ||
+                typeof projectEvaluation.code_quality !== "number" ||
+                typeof projectEvaluation.resilience !== "number" ||
+                typeof projectEvaluation.documentation !== "number" ||
+                typeof projectEvaluation.creativity !== "number"
+              ) {
+                await logToJob(
+                  job,
+                  `   ⚠ Missing score fields in LLM response - treating as irrelevant`
+                );
+                projectScore = 0;
+                projectEvaluation.is_relevant = false;
+              } else {
+                // Log detailed scores only if document is relevant
+                await logToJob(job, `   ✓ Project Evaluation Scores:`);
+                await logToJob(
+                  job,
+                  `      - Correctness: ${projectEvaluation.correctness}/5 (weight: 0.3)`
+                );
+                await logToJob(
+                  job,
+                  `      - Code Quality: ${projectEvaluation.code_quality}/5 (weight: 0.25)`
+                );
+                await logToJob(
+                  job,
+                  `      - Resilience: ${projectEvaluation.resilience}/5 (weight: 0.2)`
+                );
+                await logToJob(
+                  job,
+                  `      - Documentation: ${projectEvaluation.documentation}/5 (weight: 0.15)`
+                );
+                await logToJob(
+                  job,
+                  `      - Creativity: ${projectEvaluation.creativity}/5 (weight: 0.1)`
+                );
+
+                // Calculate weighted project score using standardized rubric weights
+                const projectRubric = vacancy.standardizedProjectRubric;
+                if (!projectRubric) {
+                  throw new Error(
+                    "Standardized project rubric not found for cv_with_test vacancy"
+                  );
+                }
+
+                projectScore =
+                  projectEvaluation.correctness *
+                    projectRubric.correctness.weight +
+                  projectEvaluation.code_quality *
+                    projectRubric.code_quality.weight +
+                  projectEvaluation.resilience *
+                    projectRubric.resilience.weight +
+                  projectEvaluation.documentation *
+                    projectRubric.documentation.weight +
+                  projectEvaluation.creativity *
+                    projectRubric.creativity.weight;
+
+                await logToJob(
+                  job,
+                  `   ✓ Weighted Score: ${projectScore.toFixed(2)}/5`
+                );
+                await logToJob(
+                  job,
+                  `   ✓ Project Score: ${projectScore.toFixed(4)}/5 (${(
+                    projectScore * 20
+                  ).toFixed(2)}%)`
+                );
+              }
             }
-
-            const projectScore =
-              projectEvaluation.correctness * projectRubric.correctness.weight +
-              projectEvaluation.code_quality *
-                projectRubric.code_quality.weight +
-              projectEvaluation.resilience * projectRubric.resilience.weight +
-              projectEvaluation.documentation *
-                projectRubric.documentation.weight +
-              projectEvaluation.creativity * projectRubric.creativity.weight;
-
-            await logToJob(
-              job,
-              `   ✓ Weighted Score: ${projectScore.toFixed(2)}/5`
-            );
-            await logToJob(
-              job,
-              `   ✓ Project Score: ${projectScore.toFixed(4)}/5 (${(
-                projectScore * 20
-              ).toFixed(2)}%)`
-            );
           } // End of project evaluation else block
 
           /* Overall Summary 
@@ -488,13 +520,17 @@ export const getEvaluationWorker = (): Worker<EvaluationJobData> => {
             ? {
                 project_score: projectScore,
                 project_feedback: projectEvaluation.feedback,
-                project_detailed_scores: {
-                  correctness: projectEvaluation.correctness,
-                  code_quality: projectEvaluation.code_quality,
-                  resilience: projectEvaluation.resilience,
-                  documentation: projectEvaluation.documentation,
-                  creativity: projectEvaluation.creativity,
-                },
+                // Only include detailed scores if document is relevant
+                project_detailed_scores:
+                  projectEvaluation.is_relevant !== false
+                    ? {
+                        correctness: projectEvaluation.correctness,
+                        code_quality: projectEvaluation.code_quality,
+                        resilience: projectEvaluation.resilience,
+                        documentation: projectEvaluation.documentation,
+                        creativity: projectEvaluation.creativity,
+                      }
+                    : undefined,
               }
             : null;
 
@@ -551,8 +587,11 @@ export const getEvaluationWorker = (): Worker<EvaluationJobData> => {
           if (projectResults) {
             result.project_score = projectResults.project_score;
             result.project_feedback = projectResults.project_feedback;
-            result.project_detailed_scores =
-              projectResults.project_detailed_scores;
+            // Only include detailed scores if they exist (document is relevant)
+            if (projectResults.project_detailed_scores) {
+              result.project_detailed_scores =
+                projectResults.project_detailed_scores;
+            }
           }
 
           // Update job status to completed
