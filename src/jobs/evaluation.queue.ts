@@ -4,8 +4,9 @@ import { getRedisClient } from "../config/redis";
 
 export interface EvaluationJobData {
   jobId: string;
-  fileIds: string[];
-  jobTitle?: string;
+  cvId: string;
+  reportId: string;
+  jobTitle: string;
 }
 
 // Create the evaluation queue

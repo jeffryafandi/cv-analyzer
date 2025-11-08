@@ -3,7 +3,7 @@ import { env } from "./config/env";
 
 export const swaggerPlugin = openapi({
   provider: "swagger-ui",
-  path: "/swagger",
+  path: "/api-docs",
   exclude: {
     paths: [
       "/",

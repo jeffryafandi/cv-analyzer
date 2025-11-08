@@ -1,5 +1,21 @@
 import { readFileSync } from "fs";
 import { PDFParse } from "pdf-parse";
+
+/**
+ * Clean text by removing non-normal characters and symbols
+ * Keeps: letters, numbers, common punctuation, and whitespace
+ * @param text - Text to clean
+ * @returns Cleaned text
+ */
+function cleanText(text: string): string {
+  // Keep: letters, numbers, common punctuation, whitespace, and some useful symbols
+  // Allowed: a-z, A-Z, 0-9, . , ! ? : ; - ( ) [ ] { } " ' @ # $ % & * + = / \ | ~ ` ^ < > and whitespace
+  return text
+    .replace(/[^\w\s.,!?:;\-()[\]{}"'@#$%&*+=/\\|~`^<>]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /**
  * Extract text content from a PDF file
  * @param filePath - Path to the PDF file
@@ -10,7 +26,8 @@ export async function extractTextFromPDF(filePath: string): Promise<string> {
     const dataBuffer = readFileSync(filePath);
     const pdfParse = new PDFParse({ data: dataBuffer });
     const parsed = await pdfParse.getText();
-    return parsed.text;
+    // Clean the extracted text
+    return cleanText(parsed.text);
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
@@ -19,49 +36,133 @@ export async function extractTextFromPDF(filePath: string): Promise<string> {
 }
 
 /**
- * Chunk text into smaller pieces with overlap for better context preservation
+ * Split text into sentences (ending with periods, exclamation marks, or question marks)
+ * @param text - Text to split
+ * @returns Array of sentences
+ */
+function splitIntoSentences(text: string): string[] {
+  // Normalize whitespace first
+  const normalized = text.replace(/\s+/g, " ").trim();
+
+  if (!normalized) {
+    return [];
+  }
+
+  const sentences: string[] = [];
+  // Split by sentence endings: period, exclamation, or question mark followed by space or end of string
+  // This regex matches: . ! or ? followed by whitespace or end of string
+  const sentenceRegex = /[.!?]+(?=\s|$)/g;
+  let lastIndex = 0;
+  let match;
+
+  while ((match = sentenceRegex.exec(normalized)) !== null) {
+    // Include the sentence ending punctuation
+    const sentenceEnd = match.index + match[0].length;
+    const sentence = normalized.substring(lastIndex, sentenceEnd).trim();
+
+    if (sentence.length > 0) {
+      sentences.push(sentence);
+    }
+    lastIndex = sentenceEnd;
+
+    // Skip whitespace after sentence ending
+    while (lastIndex < normalized.length && normalized[lastIndex] === " ") {
+      lastIndex++;
+    }
+  }
+
+  // Add remaining text as last sentence if any (if text doesn't end with punctuation)
+  if (lastIndex < normalized.length) {
+    const remaining = normalized.substring(lastIndex).trim();
+    if (remaining.length > 0) {
+      // If it doesn't end with punctuation, add it anyway (might be incomplete sentence)
+      sentences.push(remaining);
+    }
+  }
+
+  // If no sentences found, return the whole text as a single sentence
+  return sentences.length > 0 ? sentences : [normalized];
+}
+
+/**
+ * Chunk text into smaller pieces by sentences with overlap for better context preservation
+ * Each chunk will end with a complete sentence (ending with . ! or ?)
  * @param text - Text to chunk
  * @param chunkSize - Target size of each chunk (in characters)
- * @param overlap - Number of characters to overlap between chunks
- * @returns Array of text chunks
+ * @param overlap - Number of sentences to overlap between chunks
+ * @returns Array of text chunks (each ending with sentence punctuation)
  */
 export async function chunkText(
   text: string,
   chunkSize: number = 1000,
-  overlap: number = 200
+  overlap: number = 2
 ): Promise<string[]> {
-  if (text.length <= chunkSize) {
+  if (!text || text.trim().length === 0) {
+    return [];
+  }
+
+  // Split text into sentences (each ending with . ! or ?)
+  const sentences = splitIntoSentences(text);
+
+  if (sentences.length === 0) {
     return [text];
   }
 
+  // If all sentences fit in one chunk, return as is
+  const totalLength = sentences.reduce((sum, s) => sum + s.length + 1, 0) - 1; // +1 for spaces, -1 for last space
+  if (totalLength <= chunkSize) {
+    return [sentences.join(" ").trim()];
+  }
+
   const chunks: string[] = [];
-  let start = 0;
+  let currentChunk: string[] = [];
+  let currentLength = 0;
+  let sentenceIndex = 0;
 
-  while (start < text.length) {
-    let end = start + chunkSize;
+  while (sentenceIndex < sentences.length) {
+    const sentence = sentences[sentenceIndex];
+    const sentenceLength = sentence.length + (currentChunk.length > 0 ? 1 : 0); // +1 for space if not first sentence
 
-    // If not the last chunk, try to break at a sentence boundary
-    if (end < text.length) {
-      // Look for sentence endings within the last 100 characters
-      const searchStart = Math.max(start, end - 100);
-      const searchText = text.substring(searchStart, end);
-      const lastPeriod = searchText.lastIndexOf(".");
-      const lastNewline = searchText.lastIndexOf("\n");
+    // If adding this sentence would exceed chunk size and we have content, finalize chunk
+    if (currentLength + sentenceLength > chunkSize && currentChunk.length > 0) {
+      // Join sentences and ensure it ends with sentence punctuation
+      const chunkText = currentChunk.join(" ").trim();
+      chunks.push(chunkText);
 
-      // Prefer breaking at newline, then period
-      if (lastNewline > 0) {
-        end = searchStart + lastNewline + 1;
-      } else if (lastPeriod > 0) {
-        end = searchStart + lastPeriod + 1;
+      // Start new chunk with overlap sentences from previous chunk
+      if (overlap > 0 && currentChunk.length > 0) {
+        const overlapStart = Math.max(0, currentChunk.length - overlap);
+        currentChunk = currentChunk.slice(overlapStart);
+        // Recalculate length for overlap sentences
+        currentLength = currentChunk.reduce((sum, s, idx) => {
+          return sum + s.length + (idx > 0 ? 1 : 0);
+        }, 0);
+      } else {
+        currentChunk = [];
+        currentLength = 0;
       }
     }
 
-    chunks.push(text.substring(start, end).trim());
-
-    // Move start position with overlap
-    start = end - overlap;
-    if (start < 0) start = 0;
+    // Add sentence to current chunk
+    currentChunk.push(sentence);
+    currentLength += sentenceLength;
+    sentenceIndex++;
   }
 
-  return chunks.filter((chunk) => chunk.length > 0);
+  // Add remaining chunk if any (ensuring it ends with sentence punctuation)
+  if (currentChunk.length > 0) {
+    const chunkText = currentChunk.join(" ").trim();
+    chunks.push(chunkText);
+  }
+
+  // Filter out empty chunks and ensure each chunk ends with sentence punctuation
+  return chunks
+    .filter((chunk) => chunk.length > 0)
+    .map((chunk) => {
+      // Ensure chunk ends with sentence punctuation, if not add period
+      if (!/[.!?]$/.test(chunk.trim())) {
+        return chunk.trim() + ".";
+      }
+      return chunk.trim();
+    });
 }

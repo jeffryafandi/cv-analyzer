@@ -7,14 +7,22 @@
     "build": "bun build src/index.ts --outdir dist --external mongoose --external zod --external ioredis --external bullmq",
     "build:worker": "bun build src/worker.ts --outdir dist --external mongoose --external zod --external ioredis --external bullmq",
     "start": "bun run src/index.ts",
-    "start:worker": "bun run src/worker.ts"
+    "start:worker": "bun run src/worker.ts",
+    "ingest": "bun run scripts/ingest.ts",
+    "check": "bun run scripts/check.ts"
   },
   "dependencies": {
+    "@bull-board/api": "^6.14.0",
+    "@bull-board/elysia": "^6.14.0",
+    "@chroma-core/default-embed": "^0.1.8",
     "@elysiajs/openapi": "^1.4.11",
+    "@google/generative-ai": "^0.24.1",
     "bullmq": "^5.63.0",
+    "chromadb": "^3.1.1",
     "elysia": "latest",
     "ioredis": "^5.8.2",
     "mongoose": "^8.19.3",
+    "pdf-parse": "^2.4.5",
     "zod": "^4.1.12"
   },
   "devDependencies": {

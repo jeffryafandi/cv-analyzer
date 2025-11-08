@@ -3,6 +3,7 @@ import { readdirSync, statSync } from "fs";
 import { join } from "path";
 import { extractTextFromPDF, chunkText } from "../src/services/pdf.service";
 import { env } from "../src/config/env";
+import { getEmbeddingFunction } from "../src/services/embedding.service";
 
 // Collection name mappings
 const COLLECTION_MAPPINGS: Record<string, string> = {
@@ -70,13 +71,17 @@ async function ingestPDF(
       return;
     }
 
-    // Chunk the text
-    const chunks = await chunkText(text, 1000, 200);
+    // Chunk the text by sentences with overlap
+    // chunkSize: 1000 characters, overlap: 2 sentences
+    const chunks = await chunkText(text, 1000, 2);
     console.log(`   Split into ${chunks.length} chunks`);
+
+    const embedder = getEmbeddingFunction();
 
     // Get or create collection
     const collection = await client.getOrCreateCollection({
       name: collectionName,
+      embeddingFunction: embedder,
     });
 
     // Prepare documents, metadatas, and IDs
@@ -141,6 +146,21 @@ async function main() {
     );
     process.exit(1);
   }
+
+  // Delete existing collections to avoid dimension mismatch errors
+  const collectionsToDelete = [...new Set(Object.values(COLLECTION_MAPPINGS))];
+  console.log(
+    "⚠️  Deleting existing collections to ensure correct embedding dimensions..."
+  );
+  for (const collectionName of collectionsToDelete) {
+    try {
+      await client.deleteCollection({ name: collectionName });
+      console.log(`   - Deleted collection: ${collectionName}`);
+    } catch (error) {
+      // Ignore errors if collection doesn't exist
+    }
+  }
+  console.log("✅ Collections deleted.\n");
 
   // Read data directory
   const dataDir = join(process.cwd(), "data");
