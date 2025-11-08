@@ -46,7 +46,8 @@ services:
   backend:
     build:
       context: .
-      dockerfile: Dockerfile.backend
+      dockerfile: Dockerfile
+      target: backend
     container_name: cv-analyzer-backend
     ports:
       - "${PORT:-3000}:${PORT:-3000}"
@@ -58,7 +59,7 @@ services:
       - MONGODB_URI=${MONGODB_URI:-mongodb://${MONGODB_SERVICE:-mongodb}:27017/cv-analyzer}
       - REDIS_URI=${REDIS_URI:-redis://${REDIS_SERVICE:-redis}:6379}
     volumes:
-      - ./uploads:/app/uploads
+      - uploads_data:/app/uploads
       - ./data:/app/data
     depends_on:
       mongodb:
@@ -70,7 +71,8 @@ services:
   worker:
     build:
       context: .
-      dockerfile: Dockerfile.worker
+      dockerfile: Dockerfile
+      target: worker
     container_name: cv-analyzer-worker
     env_file:
       - .env
@@ -79,7 +81,7 @@ services:
       - MONGODB_URI=${MONGODB_URI:-mongodb://${MONGODB_SERVICE:-mongodb}:27017/cv-analyzer}
       - REDIS_URI=${REDIS_URI:-redis://${REDIS_SERVICE:-redis}:6379}
     volumes:
-      - ./uploads:/app/uploads
+      - uploads_data:/app/uploads
       - ./data:/app/data
     depends_on:
       mongodb:
@@ -94,4 +96,5 @@ volumes:
   mongodb_data:
   redis_data:
   chromadb_data:
+  uploads_data:
 
