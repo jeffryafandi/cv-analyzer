@@ -8,8 +8,7 @@
     "build:worker": "bun build src/worker.ts --outdir dist --external mongoose --external zod --external ioredis --external bullmq",
     "start": "bun run src/index.ts",
     "start:worker": "bun run src/worker.ts",
-    "ingest": "bun run scripts/ingest.ts",
-    "check": "bun run scripts/check.ts"
+    "check-vector-db": "bun run scripts/check-vector-db.ts"
   },
   "dependencies": {
     "@bull-board/api": "^6.14.0",
