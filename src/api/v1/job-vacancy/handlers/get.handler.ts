@@ -4,56 +4,7 @@ import {
 } from "../../../../models/job-vacancy.model";
 import { FileModel, IFile } from "../../../../models/file.model";
 import { getFilePath } from "../../../../services/storage.service";
-import { readFileSync } from "fs";
-import { PDFParse } from "pdf-parse";
-
-/**
- * Extract text from PDF preserving line breaks for markdown formatting
- */
-async function extractTextFromPDFWithLineBreaks(
-  filePath: string
-): Promise<string> {
-  try {
-    const dataBuffer = readFileSync(filePath);
-    const pdfParse = new PDFParse({ data: dataBuffer });
-    const parsed = await pdfParse.getText();
-    // Return raw text with line breaks preserved
-    return parsed.text;
-  } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-    throw new Error(`Failed to extract text from PDF: ${errorMessage}`);
-  }
-}
-
-/**
- * Clean and format PDF content for markdown display
- * - Removes page markers like "-- 1 of 2 --"
- * - Preserves line breaks and formatting
- * - Normalizes whitespace appropriately
- */
-function formatPDFContentForMarkdown(content: string): string {
-  // Remove page markers (e.g., "-- 1 of 2 --", "-- 2 of 2 --", "-- 1 of 1 --")
-  let cleaned = content.replace(/--\s*\d+\s+of\s+\d+\s*--/gi, "");
-
-  // Remove standalone page markers (e.g., "1 of 2", "2 of 2")
-  cleaned = cleaned.replace(/\b\d+\s+of\s+\d+\b/gi, "");
-
-  // Normalize multiple spaces to single space (but preserve line breaks)
-  cleaned = cleaned.replace(/[ \t]+/g, " ");
-
-  // Normalize multiple line breaks (keep max 2 consecutive line breaks)
-  cleaned = cleaned.replace(/\n{3,}/g, "\n\n");
-
-  // Trim each line
-  cleaned = cleaned
-    .split("\n")
-    .map((line) => line.trim())
-    .join("\n");
-
-  // Remove leading/trailing whitespace
-  return cleaned.trim();
-}
+import { extractAndFormatPDFForMarkdown } from "../../../../services/pdf.service";
 
 export async function getJobVacancyHandler({
   id,
@@ -87,8 +38,7 @@ export async function getJobVacancyHandler({
         if (!fileDoc) return null;
 
         const filePath = getFilePath(fileDoc.filename);
-        const rawContent = await extractTextFromPDFWithLineBreaks(filePath);
-        const formattedContent = formatPDFContentForMarkdown(rawContent);
+        const formattedContent = await extractAndFormatPDFForMarkdown(filePath);
 
         return formattedContent;
       } catch (error) {

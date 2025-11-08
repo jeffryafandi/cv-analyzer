@@ -36,6 +36,78 @@ export async function extractTextFromPDF(filePath: string): Promise<string> {
 }
 
 /**
+ * Extract text from PDF preserving line breaks for markdown formatting
+ * @param filePath - Path to the PDF file
+ * @returns Extracted text with line breaks preserved
+ */
+export async function extractTextFromPDFWithLineBreaks(
+  filePath: string
+): Promise<string> {
+  try {
+    const dataBuffer = readFileSync(filePath);
+    const pdfParse = new PDFParse({ data: dataBuffer });
+    const parsed = await pdfParse.getText();
+    // Return raw text with line breaks preserved
+    return parsed.text;
+  } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    throw new Error(`Failed to extract text from PDF: ${errorMessage}`);
+  }
+}
+
+/**
+ * Clean and format PDF content for markdown display
+ * - Removes page markers like "-- 1 of 2 --"
+ * - Filters out unrelated symbols outside of normal characters
+ * - Preserves line breaks and formatting
+ * - Normalizes whitespace appropriately
+ * @param content - Raw PDF text content
+ * @returns Formatted content ready for markdown display
+ */
+export function formatPDFContentForMarkdown(content: string): string {
+  // Remove page markers (e.g., "-- 1 of 2 --", "-- 2 of 2 --", "-- 1 of 1 --")
+  let cleaned = content.replace(/--\s*\d+\s+of\s+\d+\s*--/gi, "");
+
+  // Remove standalone page markers (e.g., "1 of 2", "2 of 2")
+  cleaned = cleaned.replace(/\b\d+\s+of\s+\d+\b/gi, "");
+
+  // Use the same filtering approach as cleanText
+  // Keep: letters, numbers, common punctuation, whitespace, and some useful symbols
+  // Allowed: a-z, A-Z, 0-9, . , ! ? : ; - ( ) [ ] { } " ' @ # $ % & * + = / \ | ~ ` ^ < > and whitespace
+  // Replace unwanted characters with spaces (preserving newlines for markdown)
+  cleaned = cleaned.replace(/[^\w\s.,!?:;\-()[\]{}"'@#$%&*+=/\\|~`^<>]/g, " ");
+
+  // Process line by line to preserve line breaks for markdown
+  cleaned = cleaned
+    .split("\n")
+    .map((line) => {
+      // Normalize multiple spaces/tabs to single space on each line
+      return line.replace(/\s+/g, " ").trim();
+    })
+    .filter((line) => line.length > 0)
+    .join("\n");
+
+  // Normalize multiple line breaks (keep max 2 consecutive line breaks)
+  cleaned = cleaned.replace(/\n{3,}/g, "\n\n");
+
+  // Remove leading/trailing whitespace
+  return cleaned.trim();
+}
+
+/**
+ * Extract and format PDF content for markdown display in one step
+ * @param filePath - Path to the PDF file
+ * @returns Formatted content ready for markdown display
+ */
+export async function extractAndFormatPDFForMarkdown(
+  filePath: string
+): Promise<string> {
+  const rawContent = await extractTextFromPDFWithLineBreaks(filePath);
+  return formatPDFContentForMarkdown(rawContent);
+}
+
+/**
  * Split text into sentences (ending with periods, exclamation marks, or question marks)
  * @param text - Text to split
  * @returns Array of sentences
