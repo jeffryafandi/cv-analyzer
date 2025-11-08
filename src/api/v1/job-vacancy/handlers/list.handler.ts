@@ -31,14 +31,21 @@ export async function listJobVacanciesHandler({
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
-      .select(
-        "-standardizedCvRubric -standardizedProjectRubric -cvEvaluationQueries -projectEvaluationQueries"
-      )
+      .select("vacancyId title description type status")
       .lean();
+
+    // Transform data to use vacancyId as id and remove _id
+    const transformedVacancies = vacancies.map((vacancy) => ({
+      id: vacancy.vacancyId,
+      title: vacancy.title,
+      description: vacancy.description,
+      type: vacancy.type,
+      status: vacancy.status,
+    }));
 
     return {
       success: true,
-      data: vacancies,
+      data: transformedVacancies,
       pagination: {
         page,
         limit,

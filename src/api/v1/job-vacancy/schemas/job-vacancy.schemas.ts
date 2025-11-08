@@ -110,6 +110,59 @@ export const listJobVacanciesSchema = {
     responses: {
       200: {
         description: "Job vacancies retrieved successfully",
+        content: {
+          "application/json": {
+            schema: {
+              type: "object" as const,
+              properties: {
+                success: { type: "boolean" as const },
+                data: {
+                  type: "array" as const,
+                  items: {
+                    type: "object" as const,
+                    properties: {
+                      id: {
+                        type: "string" as const,
+                        description: "Job vacancy ID",
+                      },
+                      title: {
+                        type: "string" as const,
+                        description: "Job vacancy title",
+                      },
+                      description: {
+                        type: "string" as const,
+                        description: "Job vacancy description",
+                      },
+                      type: {
+                        type: "string" as const,
+                        enum: ["cv_only", "cv_with_test"],
+                      },
+                      status: {
+                        type: "string" as const,
+                        enum: [
+                          "pending",
+                          "processing",
+                          "active",
+                          "inactive",
+                          "failed",
+                        ],
+                      },
+                    },
+                  },
+                },
+                pagination: {
+                  type: "object" as const,
+                  properties: {
+                    page: { type: "number" as const },
+                    limit: { type: "number" as const },
+                    total: { type: "number" as const },
+                    totalPages: { type: "number" as const },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
       500: {
         description: "Internal server error",
@@ -133,11 +186,78 @@ export const getJobVacancySchema = {
   detail: {
     summary: "Get Job Vacancy",
     description:
-      "Gets a specific job vacancy by ID with all details including generated queries and standardized rubrics",
+      "Gets a specific job vacancy by ID with all details including file contents extracted from PDFs",
     tags: ["Job Vacancy"],
     responses: {
       200: {
         description: "Job vacancy retrieved successfully",
+        content: {
+          "application/json": {
+            schema: {
+              type: "object" as const,
+              properties: {
+                success: { type: "boolean" as const },
+                data: {
+                  type: "object" as const,
+                  properties: {
+                    id: {
+                      type: "string" as const,
+                      description: "Job vacancy ID",
+                    },
+                    title: {
+                      type: "string" as const,
+                      description: "Job vacancy title",
+                    },
+                    description: {
+                      type: "string" as const,
+                      description: "Job vacancy description",
+                    },
+                    type: {
+                      type: "string" as const,
+                      enum: ["cv_only", "cv_with_test"],
+                    },
+                    status: {
+                      type: "string" as const,
+                      enum: [
+                        "pending",
+                        "processing",
+                        "active",
+                        "inactive",
+                        "failed",
+                      ],
+                    },
+                    jobDescription: {
+                      type: "string" as const,
+                      nullable: true,
+                      description:
+                        "Extracted PDF text content from job description (formatted as markdown, page markers removed)",
+                    },
+                    cvRubric: {
+                      type: "string" as const,
+                      nullable: true,
+                      description:
+                        "Extracted PDF text content from CV rubric (formatted as markdown, page markers removed)",
+                    },
+                    caseStudyBrief: {
+                      type: "string" as const,
+                      nullable: true,
+                      description:
+                        "Extracted PDF text content from case study brief (formatted as markdown, page markers removed)",
+                    },
+                    projectRubric: {
+                      type: "string" as const,
+                      nullable: true,
+                      description:
+                        "Extracted PDF text content from project rubric (formatted as markdown, page markers removed)",
+                    },
+                    createdAt: { type: "string" as const, format: "date-time" },
+                    updatedAt: { type: "string" as const, format: "date-time" },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
       404: {
         description: "Job vacancy not found",
