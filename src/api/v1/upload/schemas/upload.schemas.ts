@@ -1,3 +1,5 @@
+import { t } from "elysia";
+
 export const uploadSchema = {
   detail: {
     summary: "Upload Applicant CV and Project Report",
@@ -32,15 +34,12 @@ export const uploadSchema = {
         description: "Files uploaded successfully",
         content: {
           "application/json": {
-            schema: {
-              type: "object" as const,
-              properties: {
-                success: { type: "boolean" as const },
-                message: { type: "string" as const },
-                cvId: { type: "string" as const },
-                reportId: { type: "string" as const, nullable: true },
-              },
-            },
+            schema: t.Object({
+              success: t.Boolean(),
+              message: t.String(),
+              cvId: t.String(),
+              reportId: t.Optional(t.String()),
+            }),
           },
         },
       },
@@ -48,15 +47,12 @@ export const uploadSchema = {
         description: "Bad request - validation error",
         content: {
           "application/json": {
-            schema: {
-              type: "object" as const,
-              properties: {
-                success: { type: "boolean" as const },
-                error: { type: "string" as const },
-                cvId: { type: "string" as const, nullable: true },
-                reportId: { type: "string" as const, nullable: true },
-              },
-            },
+            schema: t.Object({
+              success: t.Boolean(),
+              error: t.String(),
+              cvId: t.Optional(t.String()),
+              reportId: t.Optional(t.String()),
+            }),
           },
         },
       },
@@ -64,15 +60,12 @@ export const uploadSchema = {
         description: "Internal server error",
         content: {
           "application/json": {
-            schema: {
-              type: "object" as const,
-              properties: {
-                success: { type: "boolean" as const },
-                error: { type: "string" as const },
-                cvId: { type: "string" as const, nullable: true },
-                reportId: { type: "string" as const, nullable: true },
-              },
-            },
+            schema: t.Object({
+              success: t.Boolean(),
+              error: t.String(),
+              cvId: t.Optional(t.String()),
+              reportId: t.Optional(t.String()),
+            }),
           },
         },
       },

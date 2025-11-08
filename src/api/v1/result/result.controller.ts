@@ -4,8 +4,8 @@ import { getResultSchema } from "./schemas/result.schemas";
 
 export const resultController = new Elysia().get(
   ":id",
-  async (context) => {
-    return getResultHandler({ id: context.params.id, set: context.set });
+  async ({ params, set }) => {
+    return getResultHandler({ id: params.id, set });
   },
   getResultSchema
 );

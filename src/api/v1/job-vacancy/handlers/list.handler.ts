@@ -1,18 +1,27 @@
 import { JobVacancyModel } from "../../../../models/job-vacancy.model";
 import { JobType, JobVacancyStatus } from "../../../../types/common";
+import {
+  parsePaginationParams,
+  createPaginationResponse,
+} from "../../../utils/pagination.util";
 
 export async function listJobVacanciesHandler({
   query,
   set,
 }: {
-  query: Record<string, string | undefined>;
+  query: {
+    status?: JobVacancyStatus;
+    type?: JobType;
+    page?: number;
+    limit?: number;
+  };
   set: { status?: number | string };
 }) {
   try {
-    const status = query.status as JobVacancyStatus | undefined;
-    const type = query.type as JobType | undefined;
-    const page = parseInt(query.page as string) || 1;
-    const limit = parseInt(query.limit as string) || 10;
+    const status = query.status;
+    const type = query.type;
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 10;
 
     // Build filter
     const filter: Record<string, unknown> = {};
@@ -43,15 +52,17 @@ export async function listJobVacanciesHandler({
       status: vacancy.status,
     }));
 
+    const { data, pagination } = createPaginationResponse(
+      transformedVacancies,
+      total,
+      page,
+      limit
+    );
+
     return {
       success: true,
-      data: transformedVacancies,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+      data,
+      pagination,
     };
   } catch (error) {
     console.error("Error listing job vacancies:", error);

@@ -14,35 +14,35 @@ export const jobVacancyController = new Elysia()
   // POST /api/v1/job-vacancy - Create new job vacancy
   .post(
     "",
-    async (context) => {
-      return createJobVacancyHandler(context);
+    async ({ request, set }) => {
+      return createJobVacancyHandler({ request, set });
     },
     createJobVacancySchema
   )
   // GET /api/v1/job-vacancy - List all job vacancies
   .get(
     "",
-    async (context) => {
-      return listJobVacanciesHandler(context);
+    async ({ query, set }) => {
+      return listJobVacanciesHandler({ query, set });
     },
     listJobVacanciesSchema
   )
   // GET /api/v1/job-vacancy/:id - Get specific job vacancy
   .get(
     ":id",
-    async (context) => {
-      return getJobVacancyHandler({ id: context.params.id, set: context.set });
+    async ({ params, set }) => {
+      return getJobVacancyHandler({ id: params.id, set });
     },
     getJobVacancySchema
   )
   // PATCH /api/v1/job-vacancy/:id - Update job vacancy status
   .patch(
     ":id",
-    async (context) => {
+    async ({ params, body, set }) => {
       return updateJobVacancyHandler({
-        id: context.params.id,
-        body: context.body as { status?: "active" | "inactive" },
-        set: context.set,
+        id: params.id,
+        body,
+        set,
       });
     },
     updateJobVacancySchema

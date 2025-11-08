@@ -4,14 +4,10 @@ import { createEvaluationSchema } from "./schemas/evaluate.schemas";
 
 export const evaluateController = new Elysia().post(
   "",
-  async (context) => {
+  async ({ body, set }) => {
     return createEvaluationHandler({
-      body: context.body as {
-        vacancyId?: string;
-        cvId?: string;
-        reportId?: string;
-      },
-      set: context.set,
+      body,
+      set,
     });
   },
   createEvaluationSchema

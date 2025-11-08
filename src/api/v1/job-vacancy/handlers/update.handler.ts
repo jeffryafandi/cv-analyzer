@@ -6,19 +6,11 @@ export async function updateJobVacancyHandler({
   set,
 }: {
   id: string;
-  body: { status?: "active" | "inactive" };
+  body: { status: "active" | "inactive" };
   set: { status?: number | string };
 }) {
   try {
     const { status } = body;
-
-    if (!status || (status !== "active" && status !== "inactive")) {
-      set.status = 400;
-      return {
-        success: false,
-        error: "status must be either 'active' or 'inactive'",
-      };
-    }
 
     const vacancy = await JobVacancyModel.findOneAndUpdate(
       { vacancyId: id },

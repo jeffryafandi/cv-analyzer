@@ -1,4 +1,9 @@
+import { t } from "elysia";
+
 export const getResultSchema = {
+  params: t.Object({
+    id: t.String(),
+  }),
   detail: {
     summary: "Get Evaluation Result",
     description:
@@ -9,64 +14,43 @@ export const getResultSchema = {
         description: "Evaluation job status and results",
         content: {
           "application/json": {
-            schema: {
-              oneOf: [
-                {
-                  type: "object" as const,
-                  properties: {
-                    id: { type: "string" as const },
-                    status: {
-                      type: "string" as const,
-                      enum: ["queued", "processing"],
-                    },
-                  },
-                },
-                {
-                  type: "object" as const,
-                  properties: {
-                    id: { type: "string" as const },
-                    status: { type: "string" as const, enum: ["completed"] },
-                    result: {
-                      type: "object" as const,
-                      properties: {
-                        cv_match_rate: { type: "number" as const },
-                        cv_feedback: { type: "string" as const },
-                        cv_detailed_scores: {
-                          type: "object" as const,
-                          properties: {
-                            technical_skills: { type: "number" as const },
-                            experience_level: { type: "number" as const },
-                            achievements: { type: "number" as const },
-                            cultural_fit: { type: "number" as const },
-                          },
-                        },
-                        project_score: { type: "number" as const },
-                        project_feedback: { type: "string" as const },
-                        project_detailed_scores: {
-                          type: "object" as const,
-                          properties: {
-                            correctness: { type: "number" as const },
-                            code_quality: { type: "number" as const },
-                            resilience: { type: "number" as const },
-                            documentation: { type: "number" as const },
-                            creativity: { type: "number" as const },
-                          },
-                        },
-                        overall_summary: { type: "string" as const },
-                      },
-                    },
-                  },
-                },
-                {
-                  type: "object" as const,
-                  properties: {
-                    id: { type: "string" as const },
-                    status: { type: "string" as const, enum: ["failed"] },
-                    error: { type: "string" as const },
-                  },
-                },
-              ],
-            } as any,
+            schema: t.Union([
+              t.Object({
+                id: t.String(),
+                status: t.Union([t.Literal("queued"), t.Literal("processing")]),
+              }),
+              t.Object({
+                id: t.String(),
+                status: t.Literal("completed"),
+                result: t.Object({
+                  cv_match_rate: t.Number(),
+                  cv_feedback: t.String(),
+                  cv_detailed_scores: t.Object({
+                    technical_skills: t.Number(),
+                    experience_level: t.Number(),
+                    achievements: t.Number(),
+                    cultural_fit: t.Number(),
+                  }),
+                  project_score: t.Optional(t.Number()),
+                  project_feedback: t.Optional(t.String()),
+                  project_detailed_scores: t.Optional(
+                    t.Object({
+                      correctness: t.Number(),
+                      code_quality: t.Number(),
+                      resilience: t.Number(),
+                      documentation: t.Number(),
+                      creativity: t.Number(),
+                    })
+                  ),
+                  overall_summary: t.String(),
+                }),
+              }),
+              t.Object({
+                id: t.String(),
+                status: t.Literal("failed"),
+                error: t.String(),
+              }),
+            ]) as any,
           },
         },
       },
@@ -74,13 +58,10 @@ export const getResultSchema = {
         description: "Job not found",
         content: {
           "application/json": {
-            schema: {
-              type: "object" as const,
-              properties: {
-                success: { type: "boolean" as const },
-                error: { type: "string" as const },
-              },
-            },
+            schema: t.Object({
+              success: t.Boolean(),
+              error: t.String(),
+            }),
           },
         },
       },
@@ -88,13 +69,10 @@ export const getResultSchema = {
         description: "Internal server error",
         content: {
           "application/json": {
-            schema: {
-              type: "object" as const,
-              properties: {
-                success: { type: "boolean" as const },
-                error: { type: "string" as const },
-              },
-            },
+            schema: t.Object({
+              success: t.Boolean(),
+              error: t.String(),
+            }),
           },
         },
       },

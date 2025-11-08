@@ -1,4 +1,11 @@
+import { t } from "elysia";
+
 export const createEvaluationSchema = {
+  body: t.Object({
+    vacancyId: t.String(),
+    cvId: t.String(),
+    reportId: t.Optional(t.String()),
+  }),
   detail: {
     summary: "Create Evaluation Job",
     description:
@@ -8,25 +15,11 @@ export const createEvaluationSchema = {
       required: true,
       content: {
         "application/json": {
-          schema: {
-            type: "object" as const,
-            required: ["vacancyId", "cvId"],
-            properties: {
-              vacancyId: {
-                type: "string" as const,
-                description: "ID of the job vacancy to evaluate against",
-              },
-              cvId: {
-                type: "string" as const,
-                description: "ID of the uploaded CV file",
-              },
-              reportId: {
-                type: "string" as const,
-                description:
-                  "ID of the uploaded project report file (required if vacancy type is cv_with_test)",
-              },
-            },
-          },
+          schema: t.Object({
+            vacancyId: t.String(),
+            cvId: t.String(),
+            reportId: t.Optional(t.String()),
+          }),
         },
       },
     },
@@ -35,13 +28,10 @@ export const createEvaluationSchema = {
         description: "Evaluation job created successfully",
         content: {
           "application/json": {
-            schema: {
-              type: "object" as const,
-              properties: {
-                id: { type: "string" as const },
-                status: { type: "string" as const, enum: ["queued"] },
-              },
-            },
+            schema: t.Object({
+              id: t.String(),
+              status: t.Literal("queued"),
+            }),
           },
         },
       },
@@ -49,13 +39,10 @@ export const createEvaluationSchema = {
         description: "Bad request - validation error",
         content: {
           "application/json": {
-            schema: {
-              type: "object" as const,
-              properties: {
-                success: { type: "boolean" as const },
-                error: { type: "string" as const },
-              },
-            },
+            schema: t.Object({
+              success: t.Boolean(),
+              error: t.String(),
+            }),
           },
         },
       },
@@ -63,13 +50,10 @@ export const createEvaluationSchema = {
         description: "Resource not found",
         content: {
           "application/json": {
-            schema: {
-              type: "object" as const,
-              properties: {
-                success: { type: "boolean" as const },
-                error: { type: "string" as const },
-              },
-            },
+            schema: t.Object({
+              success: t.Boolean(),
+              error: t.String(),
+            }),
           },
         },
       },
@@ -77,13 +61,10 @@ export const createEvaluationSchema = {
         description: "Internal server error",
         content: {
           "application/json": {
-            schema: {
-              type: "object" as const,
-              properties: {
-                success: { type: "boolean" as const },
-                error: { type: "string" as const },
-              },
-            },
+            schema: t.Object({
+              success: t.Boolean(),
+              error: t.String(),
+            }),
           },
         },
       },

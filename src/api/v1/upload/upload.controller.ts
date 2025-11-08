@@ -4,8 +4,8 @@ import { uploadSchema } from "./schemas/upload.schemas";
 
 export const uploadController = new Elysia().post(
   "",
-  async (context) => {
-    return uploadHandler(context);
+  async ({ request, set }) => {
+    return uploadHandler({ request, set });
   },
   uploadSchema
 );

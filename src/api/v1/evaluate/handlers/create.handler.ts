@@ -8,20 +8,11 @@ export async function createEvaluationHandler({
   body,
   set,
 }: {
-  body: { vacancyId?: string; cvId?: string; reportId?: string };
+  body: { vacancyId: string; cvId: string; reportId?: string };
   set: { status?: number | string };
 }) {
   try {
     const { vacancyId, cvId, reportId } = body;
-
-    // Validate input
-    if (!vacancyId || !cvId) {
-      set.status = 400;
-      return {
-        success: false,
-        error: "vacancyId and cvId are required",
-      };
-    }
 
     // Validate vacancy exists and is active
     const vacancy = await JobVacancyModel.findOne({ vacancyId });
